@@ -21,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
+import android.widget.Button
 
 class MainActivity : ComponentActivity() {
 
@@ -44,6 +45,15 @@ class MainActivity : ComponentActivity() {
 
     // New: sound
     private lateinit var btnSound: MaterialButton
+
+    private lateinit var btnRssi: Button
+    private lateinit var rssiPlot: RssiPlotView
+
+    private var rssiVizEnabled = false
+    private var rssiPollJob: Job? = null
+    private val rssiSeries: ArrayDeque<Int> = ArrayDeque()
+
+    private val RSSI_MAX_SAMPLES = 200
 
     // -------------------------
     // Logging
@@ -123,6 +133,8 @@ class MainActivity : ComponentActivity() {
         try { ble.disconnect() } catch (_: Exception) {}
         try { toneEngine.stop() } catch (_: Exception) {}
         try { logWriter.close() } catch (_: Exception) {}
+        try { stopRssiPolling() } catch (_: Exception) {}
+
     }
 
     // -------------------------
@@ -141,7 +153,8 @@ class MainActivity : ComponentActivity() {
 
         btnRetry = findViewById(R.id.btnRetry)
         btnDisconnect = findViewById(R.id.btnDisconnect)
-
+        btnRssi = findViewById(R.id.rssibutton)
+        rssiPlot = findViewById(R.id.rssiPlot)
         swAutoInterp = findViewById(R.id.swAutoInterp)
         sliderInterp = findViewById(R.id.sliderInterp)
         tvInterp = findViewById(R.id.tvInterp)
@@ -163,6 +176,8 @@ class MainActivity : ComponentActivity() {
             autoRetryEnabled = true
             startConnectFlow(userInitiated = true)
         }
+
+
 
         // Disconnect button = hard stop (disable auto-retry + cancel scheduled retry)
         btnDisconnect.setOnClickListener {
@@ -187,6 +202,17 @@ class MainActivity : ComponentActivity() {
                 toneEngine.stop()
                 btnSound.text = "Sound: OFF"
                 tail("Sound OFF")
+            }
+        }
+
+        btnRssi.setOnClickListener {
+            rssiVizEnabled = !rssiVizEnabled
+            if (rssiVizEnabled) {
+                tail("RSSI Visualizer ON")
+                startRssiPolling()
+            } else {
+                tail("RSSI Visualizer OFF")
+                stopRssiPolling()
             }
         }
 
@@ -255,6 +281,13 @@ class MainActivity : ComponentActivity() {
                 if (state == "Disconnected") {
                     if (autoRetryEnabled) scheduleAutoRetry()
                 }
+            },
+            onRssi = { rssiDbm ->
+                runOnUiThread {
+                    rssiSeries.addLast(rssiDbm)
+                    while (rssiSeries.size > RSSI_MAX_SAMPLES) rssiSeries.removeFirst()
+                    rssiPlot.setSamples(rssiSeries.toList())
+                }
             }
         )
     }
@@ -296,6 +329,27 @@ class MainActivity : ComponentActivity() {
             tvTail.text = tailLines.asReversed().joinToString("\n")
         }
     }
+
+    private fun startRssiPolling() {
+        stopRssiPolling()
+        rssiPollJob = lifecycleScope.launch {
+            val periodMs = 250L // 4 Hz; stable and not spammy
+            while (isActive && rssiVizEnabled) {
+                val ok = ble.readRemoteRssi()
+                if (!ok) {
+                    // Useful debug if not connected yet
+                    tail("readRemoteRssi() -> false (not connected?)")
+                }
+                delay(periodMs)
+            }
+        }
+    }
+
+    private fun stopRssiPolling() {
+        try { rssiPollJob?.cancel() } catch (_: Exception) {}
+        rssiPollJob = null
+    }
+
 
 
     // -------------------------

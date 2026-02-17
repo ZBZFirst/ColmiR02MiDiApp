@@ -66,6 +66,20 @@
                         android:layout_weight="1"
                         android:text="Disconnect" />
                 </LinearLayout>
+
+                <Button
+                    android:id="@+id/rssibutton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="RSSI Visualizer" />
+
+                <com.example.ringdemo.RssiPlotView
+                    android:id="@+id/rssiPlot"
+                    android:layout_width="match_parent"
+                    android:layout_height="120dp"
+                    android:layout_marginTop="8dp" />
+
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

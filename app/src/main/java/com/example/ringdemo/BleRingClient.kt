@@ -1,8 +1,17 @@
 package com.example.ringdemo
 
 import android.annotation.SuppressLint
-import android.bluetooth.*
-import android.bluetooth.le.*
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.BluetoothLeScanner
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
 import android.os.SystemClock
@@ -14,6 +23,7 @@ class BleRingClient(
     private val onLog: (String) -> Unit,
     private val onBytes: (uuid: UUID, value: ByteArray) -> Unit,
     private val onState: (String) -> Unit = {},
+    private val onRssi: (rssiDbm: Int) -> Unit = {},
 ) {
     private val bluetoothManager =
         context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -41,9 +51,10 @@ class BleRingClient(
 
     // We defer START_RAW (and any other single pending command) until notifications are enabled
     private var pendingCommandHex: String? = null
+    private var rssiReadInFlight: Boolean = false
 
     // =========================
-    // NEW: Command queue (serializes writes, write-to-all UUIDs)
+    // Command queue (serializes writes, write-to-all UUIDs)
     // =========================
     private val cmdQueue: ArrayDeque<ByteArray> = ArrayDeque()
     private var cmdQueueRunning: Boolean = false
@@ -59,6 +70,21 @@ class BleRingClient(
         // Clean restart of the whole pipeline (button-friendly)
         disconnect()
         startScan()
+    }
+
+    // =========================
+    // Public: RSSI read (connected)
+    // =========================
+    @SuppressLint("MissingPermission")
+    fun readRemoteRssi(): Boolean {
+        val g = gatt ?: return false
+
+        // Only one RSSI read at a time
+        if (rssiReadInFlight) return true  // treat as "already running" not an error
+
+        val ok = g.readRemoteRssi()
+        if (ok) rssiReadInFlight = true
+        return ok
     }
 
     // =========================
@@ -118,6 +144,7 @@ class BleRingClient(
         cmdQueueRunning = false
         disconnectAfterStop = false
         stopSendReboot = false
+        rssiReadInFlight = false
 
         onLog("Disconnected.")
         onState("Disconnected")
@@ -193,7 +220,8 @@ class BleRingClient(
                 onState("Discovering services")
                 g.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                onLog("Disconnected (state callback).")
+                onLog("Disconnected (state callback). status=$status")
+                cleanupGattFromCallback(g)
                 onState("Disconnected")
             }
         }
@@ -221,10 +249,14 @@ class BleRingClient(
             onBytes(uuid, value)
         }
 
-        override fun onCharacteristicWrite(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+        override fun onCharacteristicWrite(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
             onLog("Char write cb: ${characteristic.uuid} status=$status")
 
-            // NEW: advance command queue when we get a write callback
+            // advance command queue when we get a write callback
             cmdQueueRunning = false
             kickCmdQueue()
         }
@@ -237,6 +269,16 @@ class BleRingClient(
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
             onLog("MTU changed: mtu=$mtu status=$status")
+        }
+
+        // ✅ RSSI callback
+        override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
+            rssiReadInFlight = false
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                onRssi(rssi)
+            } else {
+                onLog("Read RSSI failed status=$status")
+            }
         }
     }
 
@@ -262,6 +304,22 @@ class BleRingClient(
     }
 
     @SuppressLint("MissingPermission")
+    private fun cleanupGattFromCallback(g: BluetoothGatt) {
+        rssiReadInFlight = false
+        enablingNotifies = false
+        pendingCommandHex = null
+        notifyQueue.clear()
+        cmdQueue.clear()
+        cmdQueueRunning = false
+        disconnectAfterStop = false
+        stopSendReboot = false
+
+        try { g.close() } catch (_: Exception) {}
+        if (gatt == g) gatt = null
+    }
+
+
+    @SuppressLint("MissingPermission")
     private fun enableNextNotifyFromQueue(g: BluetoothGatt) {
         if (!enablingNotifies) return
 
@@ -278,7 +336,6 @@ class BleRingClient(
                 onLog("Deferred stop requested during subscribe; running stop sequence now.")
                 stopLightsAndDisconnect(sendReboot = stopSendReboot)
             }
-
             return
         }
 
@@ -291,7 +348,7 @@ class BleRingClient(
             return
         }
 
-        val useIndicate = supportsIndicate && !supportsNotify  // prefer NOTIFY if available
+        val useIndicate = supportsIndicate && !supportsNotify // prefer NOTIFY if available
         val ok = enableNotify(g, ch, indicate = useIndicate)
 
         onLog(
@@ -386,10 +443,8 @@ class BleRingClient(
         return false
     }
 
-
-
     // =========================
-    // NEW: write-to-all + queued stop sequence
+    // write-to-all + queued stop sequence
     // =========================
     @SuppressLint("MissingPermission")
     private fun writePayloadToAllCmdUuids(payload: ByteArray): Boolean {
@@ -475,7 +530,7 @@ class BleRingClient(
 
         fun writeWithResponse(hex: String): Boolean {
             val payload = Protocol.framedCommand(hex)
-            ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT // <-- reliable
+            ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT // reliable
             ch.value = payload
             val ok = g.writeCharacteristic(ch)
             onLog("stopReliable write hex=$hex ok=$ok writeType=${ch.writeType}")
@@ -525,8 +580,8 @@ class BleRingClient(
 
                 // THE HAMMER: reboot stops LEDs reliably
                 if (sendReboot) {
-                    writeCommand(Protocol.REBOOT_HEX)  // forced WRITE_TYPE_DEFAULT inside writeCommand()
-                    Thread.sleep(650)                  // give ring time to reboot / stop LEDs
+                    writeCommand(Protocol.REBOOT_HEX) // forced WRITE_TYPE_DEFAULT inside writeCommand()
+                    Thread.sleep(650)
                 }
             } catch (_: Exception) {
             }
@@ -536,8 +591,7 @@ class BleRingClient(
         }.start()
     }
 
-
-    // Backwards-compatible helper name (if you already used it in MainActivity)
+    // Backwards-compatible helper name
     @SuppressLint("MissingPermission")
     fun stopThenDisconnect(sendReboot: Boolean = false, onDone: (() -> Unit)? = null) {
         stopLightsAndDisconnect(sendReboot = sendReboot)
@@ -562,7 +616,6 @@ class BleRingClient(
         val ok = tryWriteCommandAll(g, clean, forceWithResponse)
         onLog("writeCommand($clean) => $ok forceWithResponse=$forceWithResponse")
     }
-
 
     private fun findCharacteristicByUuid(g: BluetoothGatt, uuid: UUID): BluetoothGattCharacteristic? {
         for (svc in g.services) {
