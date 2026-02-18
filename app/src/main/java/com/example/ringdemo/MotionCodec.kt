@@ -1,3 +1,5 @@
+//MotionCodec.kt FILE START
+
 package com.example.ringdemo
 
 import kotlin.math.atan2
@@ -52,3 +54,5 @@ object MotionCodec {
         return MotionSample(rotX, rotY, rotZ, ax, ay, az)
     }
 }
+
+//MotionCodec.kt FILE END

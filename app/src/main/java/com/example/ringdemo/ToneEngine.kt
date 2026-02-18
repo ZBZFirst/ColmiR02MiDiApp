@@ -1,3 +1,4 @@
+// ToneEngine.kt FILE START
 package com.example.ringdemo
 
 import android.media.AudioAttributes
@@ -12,6 +13,8 @@ import kotlin.math.sin
 /**
  * 3-voice sine synth using AudioTrack (STREAM).
  * Update frequencies anytime via setFrequencies().
+ *
+ * NEW: setGain(0..1) master volume for RSSI-based fading/muting.
  */
 class ToneEngine(
     private val sampleRateHz: Int = 48000,
@@ -21,6 +24,9 @@ class ToneEngine(
 
     private data class Freqs(val fx: Float, val fy: Float, val fz: Float)
     private val freqsRef = AtomicReference(Freqs(440f, 440f, 440f))
+
+    // NEW: master gain (0..1). Atomic because audio thread reads it.
+    private val gainRef = AtomicReference(1.0f)
 
     private var audioTrack: AudioTrack? = null
     private var worker: Thread? = null
@@ -38,6 +44,11 @@ class ToneEngine(
         val fy = fyHz.coerceIn(20f, 2000f)
         val fz = fzHz.coerceIn(20f, 2000f)
         freqsRef.set(Freqs(fx, fy, fz))
+    }
+
+    // NEW: master volume control
+    fun setGain(g: Float) {
+        gainRef.set(g.coerceIn(0f, 1f))
     }
 
     fun start() {
@@ -86,25 +97,26 @@ class ToneEngine(
         val track = audioTrack ?: return
         val pcm = ShortArray(bufferFrames)
 
-        // Gain management:
         // Sum of 3 sines can clip. Keep per-voice gain low.
         val voiceGain = 0.18 // 3 voices => ~0.54 peak-ish
-
         val twoPi = 2.0 * PI
 
         while (running.get()) {
             val f = freqsRef.get()
+            val master = gainRef.get()
+
             val stepX = twoPi * f.fx / sampleRateHz
             val stepY = twoPi * f.fy / sampleRateHz
             val stepZ = twoPi * f.fz / sampleRateHz
 
             for (i in 0 until bufferFrames) {
                 val s =
-                    voiceGain * sin(phX) +
-                            voiceGain * sin(phY) +
-                            voiceGain * sin(phZ)
+                    master * (
+                            voiceGain * sin(phX) +
+                                    voiceGain * sin(phY) +
+                                    voiceGain * sin(phZ)
+                            )
 
-                // Convert [-1,1] float-ish to PCM16
                 val v = (s * 32767.0).toInt().coerceIn(-32768, 32767)
                 pcm[i] = v.toShort()
 
@@ -116,8 +128,8 @@ class ToneEngine(
                 if (phZ >= twoPi) phZ -= twoPi
             }
 
-            // Write blocking; keeps timing stable
             track.write(pcm, 0, pcm.size)
         }
     }
 }
+// ToneEngine.kt FILE END

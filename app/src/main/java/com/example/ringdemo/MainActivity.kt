@@ -1,3 +1,4 @@
+// MainActivity.kt FILE START
 package com.example.ringdemo
 
 import android.Manifest
@@ -7,6 +8,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -21,7 +23,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
-import android.widget.Button
 
 class MainActivity : ComponentActivity() {
 
@@ -43,16 +44,17 @@ class MainActivity : ComponentActivity() {
     private lateinit var sliderInterp: Slider
     private lateinit var tvInterp: TextView
 
-    // New: sound
     private lateinit var btnSound: MaterialButton
 
     private lateinit var btnRssi: Button
     private lateinit var rssiPlot: RssiPlotView
 
+    // -------------------------
+    // RSSI viz
+    // -------------------------
     private var rssiVizEnabled = false
     private var rssiPollJob: Job? = null
     private val rssiSeries: ArrayDeque<Int> = ArrayDeque()
-
     private val RSSI_MAX_SAMPLES = 200
 
     // -------------------------
@@ -74,9 +76,9 @@ class MainActivity : ComponentActivity() {
     // Adaptive tuning
     private val interpMinSec = 0.15f
     private val interpMaxSec = 1.50f
-    private val interpK = 2.0f                 // targetSec ≈ k / pktRate
-    private var rateEma = 0.0                  // smoothed pkt/s
-    private val rateEmaAlpha = 0.25            // 0..1 (higher = faster response)
+    private val interpK = 2.0f
+    private var rateEma = 0.0
+    private val rateEmaAlpha = 0.25
 
     // -------------------------
     // Sound synthesis
@@ -100,6 +102,28 @@ class MainActivity : ComponentActivity() {
     private var lastState: String = "Idle"
     private var retryJob: Job? = null
 
+    // -------------------------
+    // RSSI -> EMA -> Zone -> Audio (NEW)
+    // -------------------------
+    private enum class ProxZone { ACTIVE, ROAMING }
+    private var proxZone: ProxZone = ProxZone.ROAMING
+
+    private var rssiEma: Float? = null
+    private val rssiEmaAlpha = 0.20f
+
+    private var lastRssiMs: Long = 0L
+
+    // NEW: gain mapping uses |RSSI| (abs of negative dBm)
+    private val gainMaxAbs = 70f   // |RSSI| >= 75  => gain = 1.0
+    private val gainOffAbs = 50   // |RSSI| <= 40  => gain = 0.0
+
+
+    // if RSSI stops updating, treat as ROAMING
+    private val roamStaleMs  = 1500L
+
+    // -------------------------
+    // Permissions
+    // -------------------------
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
             val allGranted = results.values.all { it }
@@ -134,7 +158,6 @@ class MainActivity : ComponentActivity() {
         try { toneEngine.stop() } catch (_: Exception) {}
         try { logWriter.close() } catch (_: Exception) {}
         try { stopRssiPolling() } catch (_: Exception) {}
-
     }
 
     // -------------------------
@@ -153,13 +176,14 @@ class MainActivity : ComponentActivity() {
 
         btnRetry = findViewById(R.id.btnRetry)
         btnDisconnect = findViewById(R.id.btnDisconnect)
+
         btnRssi = findViewById(R.id.rssibutton)
         rssiPlot = findViewById(R.id.rssiPlot)
+
         swAutoInterp = findViewById(R.id.swAutoInterp)
         sliderInterp = findViewById(R.id.sliderInterp)
         tvInterp = findViewById(R.id.tvInterp)
 
-        // New sound button ID (must exist in activity_main.xml)
         btnSound = findViewById(R.id.btnSound)
     }
 
@@ -170,16 +194,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun initControls() {
-        // Retry button = manual connect flow (re-enables auto-retry)
         btnRetry.setOnClickListener {
             tail("Manual retry pressed.")
             autoRetryEnabled = true
             startConnectFlow(userInitiated = true)
         }
 
-
-
-        // Disconnect button = hard stop (disable auto-retry + cancel scheduled retry)
         btnDisconnect.setOnClickListener {
             tail("Disconnect pressed: sending STOP sequence then disconnect.")
             autoRetryEnabled = false
@@ -196,6 +216,7 @@ class MainActivity : ComponentActivity() {
             soundEnabled = !soundEnabled
             if (soundEnabled) {
                 toneEngine.start()
+                toneEngine.setGain(0f) // start muted until RSSI logic sets it
                 btnSound.text = "Sound: ON"
                 tail("Sound ON")
             } else {
@@ -205,6 +226,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // RSSI graph/poll toggle
         btnRssi.setOnClickListener {
             rssiVizEnabled = !rssiVizEnabled
             if (rssiVizEnabled) {
@@ -238,7 +260,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // NOTE: In auto mode, slider acts as a CAP for smoothing time (max seconds).
         sliderInterp.addOnChangeListener { _, value, fromUser ->
             if (!fromUser) return@addOnChangeListener
             interpManualSec = value
@@ -284,13 +305,69 @@ class MainActivity : ComponentActivity() {
             },
             onRssi = { rssiDbm ->
                 runOnUiThread {
+                    // Keep your graph
                     rssiSeries.addLast(rssiDbm)
                     while (rssiSeries.size > RSSI_MAX_SAMPLES) rssiSeries.removeFirst()
                     rssiPlot.setSamples(rssiSeries.toList())
+
+                    // NEW: EMA + zone + audio fade
+                    val ema = updateRssiEma(rssiDbm)
+                    val zone = updateZoneFromEma(ema)
+                    applyRssiAudio(ema, zone)
+
+                    // Optional debug (uncomment if you want it noisy)
+                    // tail("RSSI raw=$rssiDbm ema=%.1f zone=$zone".format(ema))
                 }
             }
         )
     }
+
+    // -------------------------
+    // RSSI logic (NEW)
+    // -------------------------
+    private fun updateRssiEma(rssiDbm: Int): Float {
+        val x = rssiDbm.toFloat()
+        val prev = rssiEma
+        val next = if (prev == null) x else (rssiEmaAlpha * x + (1f - rssiEmaAlpha) * prev)
+        rssiEma = next
+        lastRssiMs = System.currentTimeMillis()
+        return next
+    }
+
+    private fun updateZoneFromEma(ema: Float): ProxZone {
+        val now = System.currentTimeMillis()
+        proxZone = if (now - lastRssiMs > roamStaleMs) ProxZone.ROAMING else ProxZone.ACTIVE
+        return proxZone
+    }
+
+
+    private fun gainFromEma(ema: Float): Float {
+        // ema is negative dBm; convert to magnitude like 75 for -75 dBm
+        val rssiAbs = -ema
+
+        return when {
+            rssiAbs >= gainMaxAbs -> 1f
+            rssiAbs <= gainOffAbs -> 0f
+            else -> {
+                // Map [gainOffAbs..gainMaxAbs] -> [0..1]
+                (rssiAbs - gainOffAbs) / (gainMaxAbs - gainOffAbs)
+            }
+        }
+    }
+
+
+    private fun applyRssiAudio(ema: Float, zone: ProxZone) {
+        if (!soundEnabled || !toneEngine.isRunning()) return
+
+        if (zone == ProxZone.ROAMING) {
+            toneEngine.setGain(0f)
+            return
+        }
+
+        val g = gainFromEma(ema)
+        toneEngine.setGain(g)  // <= 40 abs => 0, >= 75 abs => 1
+    }
+
 
     // -------------------------
     // Connect / retry
@@ -324,8 +401,6 @@ class MainActivity : ComponentActivity() {
         runOnUiThread {
             tailLines.addLast(line)
             while (tailLines.size > TAIL_MAX_LINES) tailLines.removeFirst()
-
-            // NEW: newest-first display
             tvTail.text = tailLines.asReversed().joinToString("\n")
         }
     }
@@ -333,13 +408,10 @@ class MainActivity : ComponentActivity() {
     private fun startRssiPolling() {
         stopRssiPolling()
         rssiPollJob = lifecycleScope.launch {
-            val periodMs = 250L // 4 Hz; stable and not spammy
+            val periodMs = 250L
             while (isActive && rssiVizEnabled) {
                 val ok = ble.readRemoteRssi()
-                if (!ok) {
-                    // Useful debug if not connected yet
-                    tail("readRemoteRssi() -> false (not connected?)")
-                }
+                if (!ok) tail("readRemoteRssi() -> false (not connected?)")
                 delay(periodMs)
             }
         }
@@ -349,8 +421,6 @@ class MainActivity : ComponentActivity() {
         try { rssiPollJob?.cancel() } catch (_: Exception) {}
         rssiPollJob = null
     }
-
-
 
     // -------------------------
     // Rate + adaptive interp
@@ -366,13 +436,10 @@ class MainActivity : ComponentActivity() {
             pktCount = 0
             rateT0Ms = nowMs
 
-            // EMA for stability
             rateEma = if (rateEma == 0.0) hz else (rateEmaAlpha * hz + (1.0 - rateEmaAlpha) * rateEma)
 
             if (autoInterpEnabled) {
-                val target = (interpK / rateEma).toFloat()
-                    .coerceIn(interpMinSec, interpMaxSec)
-
+                val target = (interpK / rateEma).toFloat().coerceIn(interpMinSec, interpMaxSec)
                 val cappedTarget = target.coerceAtMost(interpManualSec)
                 val blended = (0.35f * cappedTarget) + (0.65f * smoother.maxInterpSec)
                 smoother.maxInterpSec = blended
@@ -395,7 +462,7 @@ class MainActivity : ComponentActivity() {
     // -------------------------
     private fun startDashboardLoop() {
         lifecycleScope.launch {
-            val periodMs = (1000.0 / 30.0).toLong() // 30 Hz UI refresh
+            val periodMs = (1000.0 / 30.0).toLong()
             while (isActive) {
                 delay(periodMs)
 
@@ -403,7 +470,8 @@ class MainActivity : ComponentActivity() {
                 val out = smoother.sample(nowSec) ?: continue
                 val (rot, g) = out
 
-                // Feed sound from SMOOTHED rot values
+                // Your existing frequency feed (still fine).
+                // Volume is now controlled by RSSI via setGain().
                 if (soundEnabled && toneEngine.isRunning()) {
                     val fx = rot.a * 4.0f
                     val fy = rot.b * 4.0f
@@ -468,3 +536,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+// MainActivity.kt FILE END

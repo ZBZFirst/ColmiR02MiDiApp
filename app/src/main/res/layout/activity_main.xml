@@ -54,6 +54,7 @@
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:textSize="14sp"
                         android:layout_weight="1"
                         android:text="Connect / Retry" />
 
@@ -63,6 +64,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="12dp"
+                        android:textSize="14sp"
                         android:layout_weight="1"
                         android:text="Disconnect" />
                 </LinearLayout>
@@ -92,14 +94,19 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:textSize="24sp"
                         android:text="Auto smoothing" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSound"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Sound: OFF" />
+                        android:text="Sound: OFF"
+                        android:textSize="14sp"
+                        />
+
+
                 </LinearLayout>
 
 

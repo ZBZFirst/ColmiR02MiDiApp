@@ -1,3 +1,5 @@
+//BleRingClient.kt FILE START
+
 package com.example.ringdemo
 
 import android.annotation.SuppressLint
@@ -625,3 +627,5 @@ class BleRingClient(
         return null
     }
 }
+
+//BleRingClient.kt FILE END

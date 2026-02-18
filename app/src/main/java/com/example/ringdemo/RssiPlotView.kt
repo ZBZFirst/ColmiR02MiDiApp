@@ -1,3 +1,5 @@
+//RssiPlotView.kt FILE START
+
 package com.example.ringdemo
 
 import android.content.Context
@@ -74,3 +76,5 @@ class RssiPlotView @JvmOverloads constructor(
         }
     }
 }
+
+//RssiPlotView.kt FILE END

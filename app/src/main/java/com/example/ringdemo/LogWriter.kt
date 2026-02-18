@@ -1,3 +1,5 @@
+//LogWriter.kt FILE START
+
 package com.example.ringdemo
 
 import android.content.Context
@@ -40,3 +42,6 @@ class LogWriter(context: Context) {
         try { writer.close() } catch (_: Exception) {}
     }
 }
+
+
+//LogWriter.kt FILE END

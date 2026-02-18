@@ -1,3 +1,5 @@
+//RetargetingSmoother.kt FILE START
+
 package com.example.ringdemo
 
 import kotlin.math.max
@@ -65,3 +67,5 @@ class RetargetingSmoother(
         return rot to g
     }
 }
+
+//RetargetingSmoother.kt FILE END
