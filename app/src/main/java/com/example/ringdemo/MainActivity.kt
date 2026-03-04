@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -51,8 +52,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var tvInterp: TextView
 
     private lateinit var btnSound: MaterialButton
+    private lateinit var btnLoadWav: MaterialButton
     private lateinit var sliderRssiGain: Slider
+    private lateinit var sliderRssiTrigger: Slider
     private lateinit var tvRssiGain: TextView
+    private lateinit var tvWavStatus: TextView
+    private lateinit var tvRssiTrigger: TextView
 
     private lateinit var swAxisX: SwitchMaterial
     private lateinit var swAxisY: SwitchMaterial
@@ -104,8 +109,12 @@ class MainActivity : ComponentActivity() {
     private val toneEngine = ToneEngine()
     private val toneMapper = ToneMapper()
     private val midiMapper = MidiMapper()
+    private val wavPlayer = WavTriggerPlayer()
     private lateinit var midiOutput: MidiOutputRouter
     private var soundEnabled = false
+    private var lastRssiDbmForTrigger: Int? = null
+    private var wavTriggerThresholdDbm: Int = -65
+    private var loadedWavUri: Uri? = null
 
     // -------------------------
     // BLE
@@ -159,6 +168,29 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+
+    private val wavPickerLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {
+                // best effort only
+            }
+
+            val ok = wavPlayer.load(contentResolver, uri)
+            if (ok) {
+                loadedWavUri = uri
+                tvWavStatus.text = "WAV sample: $uri"
+                tail("Loaded WAV trigger sample")
+            } else {
+                tail("Failed to load WAV sample")
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -184,6 +216,7 @@ class MainActivity : ComponentActivity() {
         try { logWriter.close() } catch (_: Exception) {}
         try { stopRssiPolling() } catch (_: Exception) {}
         try { midiOutput.close() } catch (_: Exception) {}
+        try { wavPlayer.release() } catch (_: Exception) {}
     }
 
     // -------------------------
@@ -213,8 +246,12 @@ class MainActivity : ComponentActivity() {
         tvInterp = findViewById(R.id.tvInterp)
 
         btnSound = findViewById(R.id.btnSound)
+        btnLoadWav = findViewById(R.id.btnLoadWav)
         sliderRssiGain = findViewById(R.id.sliderRssiGain)
+        sliderRssiTrigger = findViewById(R.id.sliderRssiTrigger)
         tvRssiGain = findViewById(R.id.tvRssiGain)
+        tvWavStatus = findViewById(R.id.tvWavStatus)
+        tvRssiTrigger = findViewById(R.id.tvRssiTrigger)
 
         swAxisX = findViewById(R.id.swAxisX)
         swAxisY = findViewById(R.id.swAxisY)
@@ -291,6 +328,18 @@ class MainActivity : ComponentActivity() {
                 btnSound.text = "Sound: OFF"
                 tail("Sound OFF")
             }
+        }
+
+        btnLoadWav.setOnClickListener {
+            wavPickerLauncher.launch(arrayOf("audio/wav", "audio/x-wav", "audio/*"))
+        }
+
+        sliderRssiTrigger.value = wavTriggerThresholdDbm.toFloat()
+        tvRssiTrigger.text = "WAV trigger RSSI: ${wavTriggerThresholdDbm} dBm"
+        sliderRssiTrigger.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            wavTriggerThresholdDbm = value.toInt()
+            tvRssiTrigger.text = "WAV trigger RSSI: ${wavTriggerThresholdDbm} dBm"
         }
 
         // RSSI->gain scaling control
@@ -432,6 +481,7 @@ class MainActivity : ComponentActivity() {
                     val ema = updateRssiEma(rssiDbm)
                     val zone = updateZoneFromEma(ema)
                     applyRssiAudio(ema, zone)
+                    maybeTriggerWavFromRssi(rssiDbm)
 
                     // Optional debug (uncomment if you want it noisy)
                     // tail("RSSI raw=$rssiDbm ema=%.1f zone=$zone".format(ema))
@@ -489,6 +539,23 @@ class MainActivity : ComponentActivity() {
         toneEngine.setGain(scaled)
     }
 
+
+    private fun maybeTriggerWavFromRssi(rssiDbm: Int) {
+        if (!soundEnabled || loadedWavUri == null) {
+            lastRssiDbmForTrigger = rssiDbm
+            return
+        }
+
+        val previous = lastRssiDbmForTrigger
+        lastRssiDbmForTrigger = rssiDbm
+
+        if (previous == null) return
+
+        val crossedUp = previous < wavTriggerThresholdDbm && rssiDbm >= wavTriggerThresholdDbm
+        if (crossedUp) {
+            wavPlayer.play(volume = 1f)
+        }
+    }
 
     // -------------------------
     // Connect / retry
