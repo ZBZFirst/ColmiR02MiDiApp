@@ -14,6 +14,7 @@ It uses `AGENTS.md` as the source-of-truth reference for:
 ### Added
 - Initial `CHANGELOG.md` with milestone-driven tracking tied directly to `AGENTS.md`.
 - Execution checklist for turning the roadmap into shippable work.
+- Added RSSI gain scaling slider control so RSSI-to-audio gain response can be tuned live.
 
 ### Roadmap milestones (from AGENTS.md)
 - [x] M1: Add MIDI output service + minimal mapper (single CC + Note). _(implemented in commit 3211202 + follow-up wiring)_

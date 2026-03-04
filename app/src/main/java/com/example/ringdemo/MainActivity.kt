@@ -46,6 +46,18 @@ class MainActivity : ComponentActivity() {
     private lateinit var tvInterp: TextView
 
     private lateinit var btnSound: MaterialButton
+    private lateinit var sliderRssiGain: Slider
+    private lateinit var tvRssiGain: TextView
+
+    private lateinit var swAxisX: SwitchMaterial
+    private lateinit var swAxisY: SwitchMaterial
+    private lateinit var swAxisZ: SwitchMaterial
+    private lateinit var sliderRangeX: RangeSlider
+    private lateinit var sliderRangeY: RangeSlider
+    private lateinit var sliderRangeZ: RangeSlider
+    private lateinit var tvRangeX: TextView
+    private lateinit var tvRangeY: TextView
+    private lateinit var tvRangeZ: TextView
 
     private lateinit var swAxisX: SwitchMaterial
     private lateinit var swAxisY: SwitchMaterial
@@ -130,7 +142,7 @@ class MainActivity : ComponentActivity() {
     // NEW: gain mapping uses |RSSI| (abs of negative dBm)
     private val gainMaxAbs = 70f   // |RSSI| >= 75  => gain = 1.0
     private val gainOffAbs = 50   // |RSSI| <= 40  => gain = 0.0
-
+    private var rssiGainScale = 1.0f
 
     // if RSSI stops updating, treat as ROAMING
     private val roamStaleMs  = 1500L
@@ -201,6 +213,8 @@ class MainActivity : ComponentActivity() {
         tvInterp = findViewById(R.id.tvInterp)
 
         btnSound = findViewById(R.id.btnSound)
+        sliderRssiGain = findViewById(R.id.sliderRssiGain)
+        tvRssiGain = findViewById(R.id.tvRssiGain)
 
         swAxisX = findViewById(R.id.swAxisX)
         swAxisY = findViewById(R.id.swAxisY)
@@ -255,6 +269,16 @@ class MainActivity : ComponentActivity() {
                 btnSound.text = "Sound: OFF"
                 tail("Sound OFF")
             }
+        }
+
+        // RSSI->gain scaling control
+        sliderRssiGain.value = rssiGainScale
+        tvRssiGain.text = "RSSI gain scale: %.2fx".format(rssiGainScale)
+        sliderRssiGain.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            rssiGainScale = value
+            tvRssiGain.text = "RSSI gain scale: %.2fx".format(rssiGainScale)
+            logWriter.log("rssi gain scale set: %.2f".format(rssiGainScale))
         }
 
         // RSSI graph/poll toggle
@@ -431,7 +455,8 @@ class MainActivity : ComponentActivity() {
         }
 
         val g = gainFromEma(ema)
-        toneEngine.setGain(g)  // <= 40 abs => 0, >= 75 abs => 1
+        val scaled = (g * rssiGainScale).coerceIn(0f, 1f)
+        toneEngine.setGain(scaled)  // <= 40 abs => 0, >= 75 abs => 1, then slider scaled
     }
 
 

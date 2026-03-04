@@ -82,6 +82,26 @@
                     android:layout_marginTop="8dp" />
 
 
+
+
+                <TextView
+                    android:id="@+id/tvRssiGain"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="RSSI gain scale: 1.00x"
+                    android:textSize="12sp"
+                    android:typeface="monospace" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderRssiGain"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="0.0"
+                    android:valueTo="2.0"
+                    android:stepSize="0.05"
+                    android:value="1.0" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
