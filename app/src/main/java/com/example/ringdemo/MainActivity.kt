@@ -591,62 +591,6 @@ class MainActivity : ComponentActivity() {
         wavRepeatJob = null
     }
 
-    private fun maybeTriggerWavFromRssi(rssiDbm: Int) {
-        latestRssiDbm = rssiDbm
-
-        if (!soundEnabled || loadedWavUri == null) {
-            stopWavRepeatLoop()
-            lastRssiDbmForTrigger = rssiDbm
-            return
-        }
-
-        if (interpolateWavEnabled) {
-            if (rssiDbm >= wavTriggerThresholdDbm) {
-                startWavRepeatLoop()
-            } else {
-                stopWavRepeatLoop()
-            }
-            lastRssiDbmForTrigger = rssiDbm
-            return
-        }
-
-        stopWavRepeatLoop()
-        val previous = lastRssiDbmForTrigger
-        lastRssiDbmForTrigger = rssiDbm
-        if (previous == null) return
-
-        val crossedUp = previous < wavTriggerThresholdDbm && rssiDbm >= wavTriggerThresholdDbm
-        if (crossedUp) {
-            wavPlayer.play(volume = 1f)
-        }
-    }
-
-    private fun startWavRepeatLoop() {
-        if (wavRepeatJob?.isActive == true) return
-
-        wavRepeatJob = lifecycleScope.launch {
-            while (isActive && soundEnabled && interpolateWavEnabled && loadedWavUri != null) {
-                val currentRssi = latestRssiDbm ?: break
-                if (currentRssi < wavTriggerThresholdDbm) break
-
-                val played = wavPlayer.play(volume = 1f)
-                val positiveRssi = abs(currentRssi)
-                val waitMs = (positiveRssi * wavRepeatDelayMultiplier).toLong().coerceAtLeast(1L)
-
-                if (!played) {
-                    delay(10L)
-                } else {
-                    delay(waitMs)
-                }
-            }
-        }
-    }
-
-    private fun stopWavRepeatLoop() {
-        try { wavRepeatJob?.cancel() } catch (_: Exception) {}
-        wavRepeatJob = null
-    }
-
     // -------------------------
     // Connect / retry
     // -------------------------
@@ -789,7 +733,8 @@ class MainActivity : ComponentActivity() {
                 val out = smoother.sample(nowSec) ?: continue
                 val (rot, g) = out
 
-                val toneMapping = toneMapper.mapRotToTones(rot)
+                val pitchRssiDbm = rssiEma ?: -100f
+                val toneMapping = toneMapper.mapRotToTonesWithRssi(rot, pitchRssiDbm)
                 val midiEvents = midiMapper.mapMotion(rot)
                 midiOutput.send(midiEvents)
 

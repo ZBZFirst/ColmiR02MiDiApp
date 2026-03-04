@@ -18,11 +18,11 @@ This tracker captures the agreed implementation plan and progress for the audio-
   - [x] Update UI labels from RSSI gain scaling to master gain.
   - **Completion notes:** Completed in commit for Phase 1. Gain slider now directly sets `toneEngine` master gain, RSSI no longer calls gain mapping, and UI label text was updated to `Gain`.
 
-- [ ] **Phase 2 — Implement RSSI-defined pitch window**
-  - [ ] Add RSSI normalization helper for `[-100..-30] -> [0..1]`.
-  - [ ] Define RSSI-driven pitch window (`windowMinHz/windowMaxHz`) inside base axis ranges.
-  - [ ] Wire latest RSSI into tone mapping pipeline.
-  - **Completion notes:** _pending_
+- [x] **Phase 2 — Implement RSSI-defined pitch window**
+  - [x] Add RSSI normalization helper for `[-100..-30] -> [0..1]`.
+  - [x] Define RSSI-driven pitch window (`windowMinHz/windowMaxHz`) inside base axis ranges.
+  - [x] Wire latest RSSI into tone mapping pipeline.
+  - **Completion notes:** Implemented a sliding pitch-window policy in `ToneMapper` (RSSI-normalized `[-100..-30] -> [0..1]`, fixed span ratio inside base axis ranges) and wired `MainActivity` dashboard loop to pass latest RSSI EMA into tone mapping.
 
 - [ ] **Phase 3 — Rotation selects pitch inside RSSI window**
   - [ ] Use `rotNorm = clamp(rotAxis / 125, 0..1)`.
@@ -50,6 +50,10 @@ This tracker captures the agreed implementation plan and progress for the audio-
 ---
 
 ## Progress log
+
+- [x] **Phase 2 completed**
+  - **Date:** 2026-03-04
+  - **Notes:** RSSI now controls pitch-window placement (not volume); tone mapper consumes RSSI EMA from the dashboard loop.
 
 - [x] **Phase 1 completed**
   - **Date:** 2026-03-04
