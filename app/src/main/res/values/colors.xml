@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Documentation block added for maintainability and release inspection.
+  File: app/src/main/res/values/colors.xml
+  Purpose: describe UI structure and intent for reviewers and maintainers.
+-->
 <resources>
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>

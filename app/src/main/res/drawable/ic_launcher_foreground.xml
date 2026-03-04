@@ -1,3 +1,13 @@
+<!--
+  Supplemental XML documentation line 1 for maintainability.
+-->
+<!--
+  Documentation block added for maintainability and release inspection.
+  File: app/src/main/res/drawable/ic_launcher_foreground.xml
+  Purpose: describe UI structure and intent for reviewers and maintainers.
+  Note 1: UI declaration documented for clarity.
+  Note 2: UI declaration documented for clarity.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
