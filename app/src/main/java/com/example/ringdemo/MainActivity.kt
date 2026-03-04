@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
     private var wavTriggerThresholdDbm: Int = -65
     private var loadedWavUri: Uri? = null
     private var interpolateWavEnabled = false
-    private var wavRepeatDelayMultiplier = 1.0f
+    private var wavRepeatDelayMultiplier = 1
     private var wavRepeatJob: Job? = null
     private var latestRssiDbm: Int? = null
 
@@ -362,12 +362,13 @@ class MainActivity : ComponentActivity() {
             tail(if (checked) "Interpolate WAV ON" else "Interpolate WAV OFF")
         }
 
-        sliderWavRepeatMultiplier.value = wavRepeatDelayMultiplier
-        tvWavRepeatMultiplier.text = "WAV repeat delay multiplier: %.1fx".format(wavRepeatDelayMultiplier)
+        sliderWavRepeatMultiplier.value = wavRepeatDelayMultiplier.toFloat()
+        tvWavRepeatMultiplier.text = "WAV repeat delay multiplier: ${wavRepeatDelayMultiplier}x"
         sliderWavRepeatMultiplier.addOnChangeListener { _, value, fromUser ->
             if (!fromUser) return@addOnChangeListener
-            wavRepeatDelayMultiplier = value.coerceIn(1f, 5f)
-            tvWavRepeatMultiplier.text = "WAV repeat delay multiplier: %.1fx".format(wavRepeatDelayMultiplier)
+            wavRepeatDelayMultiplier = value.toInt().coerceIn(1, 5)
+            sliderWavRepeatMultiplier.value = wavRepeatDelayMultiplier.toFloat()
+            tvWavRepeatMultiplier.text = "WAV repeat delay multiplier: ${wavRepeatDelayMultiplier}x"
         }
 
         // RSSI->gain scaling control
@@ -608,7 +609,7 @@ class MainActivity : ComponentActivity() {
                 if (currentRssi < wavTriggerThresholdDbm) break
 
                 val played = wavPlayer.play(volume = 1f)
-                val baseDelay = (abs(currentRssi).toFloat() * wavRepeatDelayMultiplier).toLong()
+                val baseDelay = (abs(currentRssi) * wavRepeatDelayMultiplier).toLong()
                 val minDelay = wavPlayer.getDurationMs().coerceAtLeast(10L)
                 val waitMs = maxOf(minDelay, baseDelay)
 
