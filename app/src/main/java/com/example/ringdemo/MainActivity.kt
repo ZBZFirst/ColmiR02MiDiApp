@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -27,6 +28,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
+import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
 
@@ -51,8 +53,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var tvInterp: TextView
 
     private lateinit var btnSound: MaterialButton
+    private lateinit var btnLoadWav: MaterialButton
     private lateinit var sliderRssiGain: Slider
+    private lateinit var sliderRssiTrigger: Slider
+    private lateinit var swInterpolateWav: SwitchMaterial
+    private lateinit var sliderWavRepeatMultiplier: Slider
     private lateinit var tvRssiGain: TextView
+    private lateinit var tvWavStatus: TextView
+    private lateinit var tvRssiTrigger: TextView
+    private lateinit var tvWavRepeatMultiplier: TextView
 
     private lateinit var swAxisX: SwitchMaterial
     private lateinit var swAxisY: SwitchMaterial
@@ -104,8 +113,16 @@ class MainActivity : ComponentActivity() {
     private val toneEngine = ToneEngine()
     private val toneMapper = ToneMapper()
     private val midiMapper = MidiMapper()
+    private val wavPlayer = WavTriggerPlayer()
     private lateinit var midiOutput: MidiOutputRouter
     private var soundEnabled = false
+    private var lastRssiDbmForTrigger: Int? = null
+    private var wavTriggerThresholdDbm: Int = -65
+    private var loadedWavUri: Uri? = null
+    private var interpolateWavEnabled = false
+    private var wavRepeatDelayMultiplier = 1
+    private var wavRepeatJob: Job? = null
+    private var latestRssiDbm: Int? = null
 
     // -------------------------
     // BLE
@@ -159,6 +176,29 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+
+    private val wavPickerLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {
+                // best effort only
+            }
+
+            val ok = wavPlayer.load(contentResolver, uri)
+            if (ok) {
+                loadedWavUri = uri
+                tvWavStatus.text = "WAV sample: $uri (${wavPlayer.getDurationMs()} ms)"
+                tail("Loaded WAV trigger sample")
+            } else {
+                tail("Failed to load WAV sample")
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -173,7 +213,6 @@ class MainActivity : ComponentActivity() {
 
         midiOutput.connectFirstAvailable()
         ensureBluetoothAndPermissions()
-        startRssiPolling()
         shakeSelectDeviceButton()
     }
 
@@ -185,6 +224,8 @@ class MainActivity : ComponentActivity() {
         try { logWriter.close() } catch (_: Exception) {}
         try { stopRssiPolling() } catch (_: Exception) {}
         try { midiOutput.close() } catch (_: Exception) {}
+        try { stopWavRepeatLoop() } catch (_: Exception) {}
+        try { wavPlayer.release() } catch (_: Exception) {}
     }
 
     // -------------------------
@@ -214,8 +255,15 @@ class MainActivity : ComponentActivity() {
         tvInterp = findViewById(R.id.tvInterp)
 
         btnSound = findViewById(R.id.btnSound)
+        btnLoadWav = findViewById(R.id.btnLoadWav)
         sliderRssiGain = findViewById(R.id.sliderRssiGain)
+        sliderRssiTrigger = findViewById(R.id.sliderRssiTrigger)
+        swInterpolateWav = findViewById(R.id.swInterpolateWav)
+        sliderWavRepeatMultiplier = findViewById(R.id.sliderWavRepeatMultiplier)
         tvRssiGain = findViewById(R.id.tvRssiGain)
+        tvWavStatus = findViewById(R.id.tvWavStatus)
+        tvRssiTrigger = findViewById(R.id.tvRssiTrigger)
+        tvWavRepeatMultiplier = findViewById(R.id.tvWavRepeatMultiplier)
 
         swAxisX = findViewById(R.id.swAxisX)
         swAxisY = findViewById(R.id.swAxisY)
@@ -280,15 +328,47 @@ class MainActivity : ComponentActivity() {
             soundEnabled = !soundEnabled
             if (soundEnabled) {
                 toneEngine.start()
-                toneEngine.setGain(0f) // start muted until RSSI logic sets it
+                val startupGain = rssiEma?.let { ema ->
+                    (gainFromEma(ema) * rssiGainScale).coerceIn(0f, 1f)
+                } ?: 1f
+                toneEngine.setGain(startupGain)
                 toneEngine.setVoiceGains(1f, 1f, 1f)
                 btnSound.text = "Sound: ON"
                 tail("Sound ON")
             } else {
                 toneEngine.stop()
+                stopWavRepeatLoop()
                 btnSound.text = "Sound: OFF"
                 tail("Sound OFF")
             }
+        }
+
+        btnLoadWav.setOnClickListener {
+            wavPickerLauncher.launch(arrayOf("audio/wav", "audio/x-wav", "audio/*"))
+        }
+
+        sliderRssiTrigger.value = wavTriggerThresholdDbm.toFloat()
+        tvRssiTrigger.text = "WAV trigger RSSI: ${wavTriggerThresholdDbm} dBm"
+        sliderRssiTrigger.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            wavTriggerThresholdDbm = value.toInt()
+            tvRssiTrigger.text = "WAV trigger RSSI: ${wavTriggerThresholdDbm} dBm"
+        }
+
+        swInterpolateWav.isChecked = false
+        swInterpolateWav.setOnCheckedChangeListener { _, checked ->
+            interpolateWavEnabled = checked
+            if (!checked) stopWavRepeatLoop()
+            tail(if (checked) "Interpolate WAV ON" else "Interpolate WAV OFF")
+        }
+
+        sliderWavRepeatMultiplier.value = wavRepeatDelayMultiplier.toFloat()
+        tvWavRepeatMultiplier.text = "WAV repeat delay multiplier: ${wavRepeatDelayMultiplier}x"
+        sliderWavRepeatMultiplier.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            wavRepeatDelayMultiplier = value.toInt().coerceIn(1, 5)
+            sliderWavRepeatMultiplier.value = wavRepeatDelayMultiplier.toFloat()
+            tvWavRepeatMultiplier.text = "WAV repeat delay multiplier: ${wavRepeatDelayMultiplier}x"
         }
 
         // RSSI->gain scaling control
@@ -413,7 +493,11 @@ class MainActivity : ComponentActivity() {
                 setStatus("State: $state")
 
                 if (state == "Disconnected") {
+                    stopRssiPolling()
+                    stopWavRepeatLoop()
                     if (autoRetryEnabled) scheduleAutoRetry()
+                } else if (state == "Streaming") {
+                    startRssiPolling()
                 }
             },
             onRssi = { rssiDbm ->
@@ -427,6 +511,7 @@ class MainActivity : ComponentActivity() {
                     val ema = updateRssiEma(rssiDbm)
                     val zone = updateZoneFromEma(ema)
                     applyRssiAudio(ema, zone)
+                    maybeTriggerWavFromRssi(rssiDbm)
 
                     // Optional debug (uncomment if you want it noisy)
                     // tail("RSSI raw=$rssiDbm ema=%.1f zone=$zone".format(ema))
@@ -459,11 +544,13 @@ class MainActivity : ComponentActivity() {
         val rssiAbs = -ema
 
         return when {
-            rssiAbs >= gainMaxAbs -> 1f
-            rssiAbs <= gainOffAbs -> 0f
+            // stronger RSSI (closer to 0 dBm) => louder
+            rssiAbs <= gainOffAbs -> 1f
+            // weaker RSSI => quieter
+            rssiAbs >= gainMaxAbs -> 0f
             else -> {
-                // Map [gainOffAbs..gainMaxAbs] -> [0..1]
-                (rssiAbs - gainOffAbs) / (gainMaxAbs - gainOffAbs)
+                // Map [gainOffAbs..gainMaxAbs] -> [1..0]
+                1f - ((rssiAbs - gainOffAbs) / (gainMaxAbs - gainOffAbs))
             }
         }
     }
@@ -479,9 +566,65 @@ class MainActivity : ComponentActivity() {
 
         val g = gainFromEma(ema)
         val scaled = (g * rssiGainScale).coerceIn(0f, 1f)
-        toneEngine.setGain(scaled)  // <= 40 abs => 0, >= 75 abs => 1, then slider scaled
+        toneEngine.setGain(scaled)
     }
 
+
+    private fun maybeTriggerWavFromRssi(rssiDbm: Int) {
+        latestRssiDbm = rssiDbm
+
+        if (!soundEnabled || loadedWavUri == null) {
+            stopWavRepeatLoop()
+            lastRssiDbmForTrigger = rssiDbm
+            return
+        }
+
+        if (interpolateWavEnabled) {
+            if (rssiDbm >= wavTriggerThresholdDbm) {
+                startWavRepeatLoop()
+            } else {
+                stopWavRepeatLoop()
+            }
+            lastRssiDbmForTrigger = rssiDbm
+            return
+        }
+
+        stopWavRepeatLoop()
+        val previous = lastRssiDbmForTrigger
+        lastRssiDbmForTrigger = rssiDbm
+        if (previous == null) return
+
+        val crossedUp = previous < wavTriggerThresholdDbm && rssiDbm >= wavTriggerThresholdDbm
+        if (crossedUp) {
+            wavPlayer.play(volume = 1f)
+        }
+    }
+
+    private fun startWavRepeatLoop() {
+        if (wavRepeatJob?.isActive == true) return
+
+        wavRepeatJob = lifecycleScope.launch {
+            while (isActive && soundEnabled && interpolateWavEnabled && loadedWavUri != null) {
+                val currentRssi = latestRssiDbm ?: break
+                if (currentRssi < wavTriggerThresholdDbm) break
+
+                val played = wavPlayer.play(volume = 1f)
+                val positiveRssi = abs(currentRssi)
+                val waitMs = (positiveRssi * wavRepeatDelayMultiplier).toLong().coerceAtLeast(1L)
+
+                if (!played) {
+                    delay(10L)
+                } else {
+                    delay(waitMs)
+                }
+            }
+        }
+    }
+
+    private fun stopWavRepeatLoop() {
+        try { wavRepeatJob?.cancel() } catch (_: Exception) {}
+        wavRepeatJob = null
+    }
 
     // -------------------------
     // Connect / retry
