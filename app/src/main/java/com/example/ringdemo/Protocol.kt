@@ -7,6 +7,19 @@ object Protocol {
     const val targetAddress: String = "30:35:47:33:DA:00"
     const val targetName: String = "R02_DA00"
 
+
+
+    // === Compatibility probing ===
+    // If true, scanner can try non-hardcoded devices that look like Colmi/R0 targets,
+    // then validate compatibility by checking required GATT UUIDs.
+    const val enableCompatibilityProbe: Boolean = true
+
+    val compatibleNameHints: List<String> = listOf(
+        "R0",
+        "COLMI",
+        "QRING",
+    )
+
     // === Notify UUIDs ===
     val notifyUuids: List<UUID> = listOf(
         UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca9e"),

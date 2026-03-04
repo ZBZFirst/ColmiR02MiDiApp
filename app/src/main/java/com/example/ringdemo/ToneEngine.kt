@@ -23,10 +23,13 @@ class ToneEngine(
     private val running = AtomicBoolean(false)
 
     private data class Freqs(val fx: Float, val fy: Float, val fz: Float)
+    private data class VoiceGains(val gx: Float, val gy: Float, val gz: Float)
+
     private val freqsRef = AtomicReference(Freqs(440f, 440f, 440f))
 
-    // NEW: master gain (0..1). Atomic because audio thread reads it.
+    // master gain (0..1). Atomic because audio thread reads it.
     private val gainRef = AtomicReference(1.0f)
+    private val voiceGainsRef = AtomicReference(VoiceGains(1f, 1f, 1f))
 
     private var audioTrack: AudioTrack? = null
     private var worker: Thread? = null
@@ -46,9 +49,18 @@ class ToneEngine(
         freqsRef.set(Freqs(fx, fy, fz))
     }
 
-    // NEW: master volume control
     fun setGain(g: Float) {
         gainRef.set(g.coerceIn(0f, 1f))
+    }
+
+    fun setVoiceGains(gx: Float, gy: Float, gz: Float) {
+        voiceGainsRef.set(
+            VoiceGains(
+                gx = gx.coerceIn(0f, 1f),
+                gy = gy.coerceIn(0f, 1f),
+                gz = gz.coerceIn(0f, 1f),
+            )
+        )
     }
 
     fun start() {
@@ -104,6 +116,7 @@ class ToneEngine(
         while (running.get()) {
             val f = freqsRef.get()
             val master = gainRef.get()
+            val vg = voiceGainsRef.get()
 
             val stepX = twoPi * f.fx / sampleRateHz
             val stepY = twoPi * f.fy / sampleRateHz
@@ -112,9 +125,9 @@ class ToneEngine(
             for (i in 0 until bufferFrames) {
                 val s =
                     master * (
-                            voiceGain * sin(phX) +
-                                    voiceGain * sin(phY) +
-                                    voiceGain * sin(phZ)
+                            (voiceGain * vg.gx) * sin(phX) +
+                                    (voiceGain * vg.gy) * sin(phY) +
+                                    (voiceGain * vg.gz) * sin(phZ)
                             )
 
                 val v = (s * 32767.0).toInt().coerceIn(-32768, 32767)
