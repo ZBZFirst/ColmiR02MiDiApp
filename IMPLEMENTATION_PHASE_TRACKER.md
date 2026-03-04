@@ -30,11 +30,11 @@ This tracker captures the agreed implementation plan and progress for the audio-
   - [x] Remove legacy `/255` normalization behavior.
   - **Completion notes:** Updated `ToneMapper` axis normalization from `/255` to `/125` via `rotationMax = 125f`, so pitch selection uses the agreed 0..125 rotation domain inside the RSSI-defined window.
 
-- [ ] **Phase 4 — Smoothing placement refinement**
-  - [ ] Keep existing packet smoothing and/or add dedicated frequency glide stage.
-  - [ ] Apply smoothing to final `freqHz` (or normalized rotation) for stable pitch transitions.
-  - [ ] Tune defaults for low packet rate (~3 pkt/sec).
-  - **Completion notes:** _pending_
+- [x] **Phase 4 — Smoothing placement refinement**
+  - [x] Keep existing packet smoothing and/or add dedicated frequency glide stage.
+  - [x] Apply smoothing to final `freqHz` (or normalized rotation) for stable pitch transitions.
+  - [x] Tune defaults for low packet rate (~3 pkt/sec).
+  - **Completion notes:** Added a dedicated frequency glide smoother in `MainActivity` (`freqSmoothingTauSec = 0.35s`) applied to final mapped Hz before `ToneEngine.setFrequencies`, while keeping existing packet smoothing path intact.
 
 - [ ] **Phase 5 — Telemetry / debug visibility**
   - [ ] Surface `rssiDbm`, `rssiNorm`, pitch window, rotNorm, and final freq in diagnostics.
@@ -50,6 +50,10 @@ This tracker captures the agreed implementation plan and progress for the audio-
 ---
 
 ## Progress log
+
+- [x] **Phase 4 completed**
+  - **Date:** 2026-03-04
+  - **Notes:** Added per-axis frequency glide smoothing on final Hz output; reset on disconnect/sound-off to avoid stale state.
 
 - [x] **Phase 3 completed**
   - **Date:** 2026-03-04

@@ -29,6 +29,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
 import kotlin.math.abs
+import kotlin.math.exp
 
 class MainActivity : ComponentActivity() {
 
@@ -123,6 +124,13 @@ class MainActivity : ComponentActivity() {
     private var wavRepeatDelayMultiplier = 1
     private var wavRepeatJob: Job? = null
     private var latestRssiDbm: Int? = null
+
+    // Phase 4: frequency glide smoothing (applied to final Hz)
+    private var smoothFreqX: Float? = null
+    private var smoothFreqY: Float? = null
+    private var smoothFreqZ: Float? = null
+    private var lastFreqSmoothSec: Double = 0.0
+    private val freqSmoothingTauSec = 0.35f
 
     // -------------------------
     // BLE
@@ -332,6 +340,7 @@ class MainActivity : ComponentActivity() {
                 tail("Sound ON")
             } else {
                 toneEngine.stop()
+                resetFrequencySmoothing()
                 stopWavRepeatLoop()
                 btnSound.text = "Sound: OFF"
                 tail("Sound OFF")
@@ -491,6 +500,7 @@ class MainActivity : ComponentActivity() {
                 if (state == "Disconnected") {
                     stopRssiPolling()
                     stopWavRepeatLoop()
+                    resetFrequencySmoothing()
                     if (autoRetryEnabled) scheduleAutoRetry()
                 } else if (state == "Streaming") {
                     startRssiPolling()
@@ -735,13 +745,14 @@ class MainActivity : ComponentActivity() {
 
                 val pitchRssiDbm = rssiEma ?: -100f
                 val toneMapping = toneMapper.mapRotToTonesWithRssi(rot, pitchRssiDbm)
+                val smoothToneMapping = smoothToneMapping(toneMapping, nowSec)
                 val midiEvents = midiMapper.mapMotion(rot)
                 midiOutput.send(midiEvents)
 
                 // Volume is controlled only by master gain slider.
                 if (soundEnabled && toneEngine.isRunning()) {
-                    toneEngine.setFrequencies(toneMapping.fx, toneMapping.fy, toneMapping.fz)
-                    toneEngine.setVoiceGains(toneMapping.gx, toneMapping.gy, toneMapping.gz)
+                    toneEngine.setFrequencies(smoothToneMapping.fx, smoothToneMapping.fy, smoothToneMapping.fz)
+                    toneEngine.setVoiceGains(smoothToneMapping.gx, smoothToneMapping.gy, smoothToneMapping.gz)
                 }
 
                 runOnUiThread {
@@ -751,6 +762,51 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun smoothToneMapping(target: ToneMapper.ToneMapping, nowSec: Double): ToneMapper.ToneMapping {
+        if (lastFreqSmoothSec == 0.0) {
+            lastFreqSmoothSec = nowSec
+            smoothFreqX = target.fx
+            smoothFreqY = target.fy
+            smoothFreqZ = target.fz
+            return target
+        }
+
+        val dt = (nowSec - lastFreqSmoothSec).coerceAtLeast(0.0)
+        lastFreqSmoothSec = nowSec
+
+        val tau = freqSmoothingTauSec.toDouble().coerceAtLeast(1e-3)
+        val alpha = (1.0 - exp(-dt / tau)).toFloat().coerceIn(0f, 1f)
+
+        val sx = smoothOne(smoothFreqX, target.fx, alpha)
+        val sy = smoothOne(smoothFreqY, target.fy, alpha)
+        val sz = smoothOne(smoothFreqZ, target.fz, alpha)
+
+        smoothFreqX = sx
+        smoothFreqY = sy
+        smoothFreqZ = sz
+
+        return ToneMapper.ToneMapping(
+            fx = sx,
+            fy = sy,
+            fz = sz,
+            gx = target.gx,
+            gy = target.gy,
+            gz = target.gz,
+        )
+    }
+
+    private fun smoothOne(prev: Float?, target: Float, alpha: Float): Float {
+        val p = prev ?: return target
+        return p + (target - p) * alpha
+    }
+
+    private fun resetFrequencySmoothing() {
+        smoothFreqX = null
+        smoothFreqY = null
+        smoothFreqZ = null
+        lastFreqSmoothSec = 0.0
     }
 
     private fun startLogFlushLoop() {
