@@ -24,11 +24,11 @@ This tracker captures the agreed implementation plan and progress for the audio-
   - [x] Wire latest RSSI into tone mapping pipeline.
   - **Completion notes:** Implemented a sliding pitch-window policy in `ToneMapper` (RSSI-normalized `[-100..-30] -> [0..1]`, fixed span ratio inside base axis ranges) and wired `MainActivity` dashboard loop to pass latest RSSI EMA into tone mapping.
 
-- [ ] **Phase 3 — Rotation selects pitch inside RSSI window**
-  - [ ] Use `rotNorm = clamp(rotAxis / 125, 0..1)`.
-  - [ ] Compute `freqHz = lerp(windowMinHz, windowMaxHz, rotNorm)` per enabled axis.
-  - [ ] Remove legacy `/255` normalization behavior.
-  - **Completion notes:** _pending_
+- [x] **Phase 3 — Rotation selects pitch inside RSSI window**
+  - [x] Use `rotNorm = clamp(rotAxis / 125, 0..1)`.
+  - [x] Compute `freqHz = lerp(windowMinHz, windowMaxHz, rotNorm)` per enabled axis.
+  - [x] Remove legacy `/255` normalization behavior.
+  - **Completion notes:** Updated `ToneMapper` axis normalization from `/255` to `/125` via `rotationMax = 125f`, so pitch selection uses the agreed 0..125 rotation domain inside the RSSI-defined window.
 
 - [ ] **Phase 4 — Smoothing placement refinement**
   - [ ] Keep existing packet smoothing and/or add dedicated frequency glide stage.
@@ -50,6 +50,10 @@ This tracker captures the agreed implementation plan and progress for the audio-
 ---
 
 ## Progress log
+
+- [x] **Phase 3 completed**
+  - **Date:** 2026-03-04
+  - **Notes:** Rotation now normalizes against 125 (not 255), so final frequency selection inside RSSI windows matches the spec.
 
 - [x] **Phase 2 completed**
   - **Date:** 2026-03-04

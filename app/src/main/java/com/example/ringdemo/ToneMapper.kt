@@ -33,6 +33,7 @@ class ToneMapper {
     // Phase 2 policy: RSSI slides a fixed-size pitch window within base [minHz..maxHz].
     // We keep this as a constant for now; exposing it to UI can come later.
     private val windowSpanRatio = 0.45f
+    private val rotationMax = 125f
 
     fun setAxisEnabled(axis: Char, enabled: Boolean) {
         axisConfig(axis).enabled = enabled
@@ -94,7 +95,7 @@ class ToneMapper {
     }
 
     private fun mapAxisWithinWindow(value: Float, window: PitchWindow): Float {
-        val norm = (value / 255f).coerceIn(0f, 1f)
+        val norm = (value / rotationMax).coerceIn(0f, 1f)
         val hz = window.minHz + (window.maxHz - window.minHz) * norm
         return hz.roundToInt().toFloat()
     }
