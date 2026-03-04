@@ -386,7 +386,7 @@ class BleRingClient(
             g.setPreferredPhy(
                 BluetoothDevice.PHY_LE_2M_MASK,
                 BluetoothDevice.PHY_LE_2M_MASK,
-                BluetoothGatt.PHY_OPTION_NO_PREFERRED
+                BluetoothDevice.PHY_OPTION_NO_PREFERRED
             )
             onLog("setPreferredPhy(2M) requested")
         }
