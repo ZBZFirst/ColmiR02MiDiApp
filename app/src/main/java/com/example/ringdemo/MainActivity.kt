@@ -2,6 +2,7 @@
 package com.example.ringdemo
 
 import android.Manifest
+import android.app.AlertDialog
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
@@ -41,6 +42,8 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var btnRetry: MaterialButton
     private lateinit var btnDisconnect: MaterialButton
+    private lateinit var btnSelectDevice: MaterialButton
+    private lateinit var tvSelectedDevice: TextView
 
     private lateinit var swAutoInterp: SwitchMaterial
     private lateinit var sliderInterp: Slider
@@ -119,6 +122,9 @@ class MainActivity : ComponentActivity() {
     private var lastState: String = "Idle"
     private var retryJob: Job? = null
 
+    private var selectedDeviceAddress: String? = null
+    private var selectedDeviceLabel: String = "(none)"
+
     // -------------------------
     // RSSI -> EMA -> Zone -> Audio (NEW)
     // -------------------------
@@ -195,6 +201,8 @@ class MainActivity : ComponentActivity() {
 
         btnRetry = findViewById(R.id.btnRetry)
         btnDisconnect = findViewById(R.id.btnDisconnect)
+        btnSelectDevice = findViewById(R.id.btnSelectDevice)
+        tvSelectedDevice = findViewById(R.id.tvSelectedDevice)
 
         btnRssi = findViewById(R.id.rssibutton)
         rssiPlot = findViewById(R.id.rssiPlot)
@@ -229,8 +237,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun initControls() {
+        tvSelectedDevice.text = "Selected device: (none)"
+
+        btnSelectDevice.setOnClickListener {
+            tail("Scanning for nearby devices (selection mode)...")
+            setStatus("State: Scanning for devices")
+            ble.startSelectionScan()
+
+            lifecycleScope.launch {
+                delay(3000)
+                ble.stopScan()
+                showDeviceSelectionDialog()
+            }
+        }
+
         btnRetry.setOnClickListener {
-            tail("Manual retry pressed.")
+            tail("Connect pressed.")
             autoRetryEnabled = true
             startConnectFlow(userInitiated = true)
         }
@@ -456,6 +478,7 @@ class MainActivity : ComponentActivity() {
     // -------------------------
     private fun startConnectFlow(userInitiated: Boolean) {
         retryJob?.cancel()
+        ble.setSelectedDevice(selectedDeviceAddress)
         if (userInitiated) setStatus("State: Scanning")
         ble.startConnectFlow()
     }
@@ -494,6 +517,28 @@ class MainActivity : ComponentActivity() {
             'Y' -> tvRangeY.text = text
             'Z' -> tvRangeZ.text = text
         }
+    }
+
+    private fun showDeviceSelectionDialog() {
+        val devices = ble.getDiscoveredDevices()
+        if (devices.isEmpty()) {
+            tail("No devices discovered in range.")
+            return
+        }
+
+        val labels = devices.map { d -> "${d.name} (${d.address}) RSSI=${d.rssi}" }
+
+        AlertDialog.Builder(this)
+            .setTitle("Select Device To Connect")
+            .setItems(labels.toTypedArray()) { _, which ->
+                val d = devices[which]
+                selectedDeviceAddress = d.address
+                selectedDeviceLabel = "${d.name} (${d.address})"
+                tvSelectedDevice.text = "Selected device: $selectedDeviceLabel"
+                tail("Selected device: $selectedDeviceLabel")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun startRssiPolling() {

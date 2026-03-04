@@ -20,6 +20,15 @@ import android.os.SystemClock
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
+
+
+data class DiscoveredDevice(
+    val address: String,
+    val name: String,
+    val rssi: Int,
+    val lastSeenMs: Long,
+)
+
 class BleRingClient(
     private val context: Context,
     private val onLog: (String) -> Unit,
@@ -43,14 +52,31 @@ class BleRingClient(
     private var scanStartMs: Long = 0L
     private var uniqueSeenCount: Int = 0
     private val lastSeenMsByAddress = ConcurrentHashMap<String, Long>()
+    private val discoveredByAddress = ConcurrentHashMap<String, DiscoveredDevice>()
     private val rejectedAddresses: MutableSet<String> = HashSet()
+
+    private var selectedAddress: String? = null
 
     private var activeDeviceAddress: String? = null
     private var activeDeviceName: String? = null
     private var rescanAfterIncompatibleDisconnect: Boolean = false
+    private var scanAutoConnect: Boolean = true
 
     fun getIsScanning(): Boolean = isScanning
     fun getUniqueSeenCount(): Int = uniqueSeenCount
+
+    fun setSelectedDevice(address: String?) {
+        selectedAddress = address?.uppercase()
+    }
+
+    fun getSelectedDeviceAddress(): String? = selectedAddress
+
+    fun getDiscoveredDevices(): List<DiscoveredDevice> =
+        discoveredByAddress.values.sortedByDescending { it.rssi }
+
+    fun startSelectionScan() {
+        startScan(autoConnect = false)
+    }
 
     // IMPORTANT: Android requires descriptor writes be serialized.
     private val notifyQueue: ArrayDeque<BluetoothGattCharacteristic> = ArrayDeque()
@@ -77,7 +103,7 @@ class BleRingClient(
         // Clean restart of the whole pipeline (button-friendly)
         rejectedAddresses.clear()
         disconnect()
-        startScan()
+        startScan(autoConnect = true)
     }
 
     // =========================
@@ -99,7 +125,7 @@ class BleRingClient(
     // Scan
     // =========================
     @SuppressLint("MissingPermission")
-    fun startScan() {
+    fun startScan(autoConnect: Boolean = true) {
         val s = scanner ?: run {
             onLog("No BLE scanner available")
             onState("Disconnected")
@@ -115,6 +141,9 @@ class BleRingClient(
         scanStartMs = SystemClock.elapsedRealtime()
         uniqueSeenCount = 0
         lastSeenMsByAddress.clear()
+        discoveredByAddress.clear()
+
+        scanAutoConnect = autoConnect
 
         onLog("Scanning... (logging discoveries)")
         onState("Scanning")
@@ -185,13 +214,28 @@ class BleRingClient(
                 )
             }
 
-            val targetMatch = addr.equals(Protocol.targetAddress, ignoreCase = true) || name == Protocol.targetName
+            discoveredByAddress[addr.uppercase()] = DiscoveredDevice(
+                address = addr,
+                name = if (name.isBlank()) "<no-name>" else name,
+                rssi = rssi,
+                lastSeenMs = nowMs,
+            )
+
+            if (!scanAutoConnect) return
+
+            val selectedMatch = selectedAddress != null && addr.equals(selectedAddress, ignoreCase = true)
+            val targetMatch = selectedAddress == null &&
+                    (addr.equals(Protocol.targetAddress, ignoreCase = true) || name == Protocol.targetName)
             val hintedMatch = Protocol.enableCompatibilityProbe &&
                     Protocol.compatibleNameHints.any { hint -> name.uppercase().contains(hint) }
             val rejected = rejectedAddresses.contains(addr.uppercase())
 
-            if (targetMatch || (hintedMatch && !rejected)) {
-                val reason = if (targetMatch) "TARGET" else "COMPAT_PROBE"
+            if (selectedMatch || targetMatch || (hintedMatch && !rejected)) {
+                val reason = when {
+                    selectedMatch -> "SELECTED"
+                    targetMatch -> "TARGET"
+                    else -> "COMPAT_PROBE"
+                }
                 onLog("Found $reason: name=$name addr=$addr rssi=$rssi (connecting)")
                 onState("Connecting")
                 stopScan()
@@ -242,7 +286,7 @@ class BleRingClient(
 
                 if (rescanAfterIncompatibleDisconnect) {
                     rescanAfterIncompatibleDisconnect = false
-                    startScan()
+                    startScan(autoConnect = true)
                 }
             }
         }

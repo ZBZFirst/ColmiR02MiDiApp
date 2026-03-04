@@ -32,8 +32,8 @@ This file documents:
 
 ## Adding a new Colmi ring (onboarding flow)
 Use a two-step approach:
-1. **Discovery:** scan BLE network for likely devices (name/address hints).
-2. **Compatibility probe:** connect candidate, discover services, then verify that required characteristics exist:
+1. **Discovery/selection:** user presses **Select Device To Connect**, app scans BLE network and shows in-range devices to pick from.
+2. **Compatibility probe:** after user presses **Connect**, app connects candidate, discovers services, then verifies required characteristics exist:
    - at least one notify UUID from `Protocol.notifyUuids`
    - at least one writable command UUID from `Protocol.cmdWriteUuids`
 
