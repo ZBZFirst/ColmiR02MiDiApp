@@ -59,6 +59,16 @@ class MainActivity : ComponentActivity() {
     private lateinit var tvRangeY: TextView
     private lateinit var tvRangeZ: TextView
 
+    private lateinit var swAxisX: SwitchMaterial
+    private lateinit var swAxisY: SwitchMaterial
+    private lateinit var swAxisZ: SwitchMaterial
+    private lateinit var sliderRangeX: RangeSlider
+    private lateinit var sliderRangeY: RangeSlider
+    private lateinit var sliderRangeZ: RangeSlider
+    private lateinit var tvRangeX: TextView
+    private lateinit var tvRangeY: TextView
+    private lateinit var tvRangeZ: TextView
+
     private lateinit var btnRssi: Button
     private lateinit var rssiPlot: RssiPlotView
 
