@@ -82,6 +82,26 @@
                     android:layout_marginTop="8dp" />
 
 
+
+
+                <TextView
+                    android:id="@+id/tvRssiGain"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="RSSI gain scale: 1.00x"
+                    android:textSize="12sp"
+                    android:typeface="monospace" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderRssiGain"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="0.0"
+                    android:valueTo="2.0"
+                    android:stepSize="0.05"
+                    android:value="1.0" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -109,6 +129,91 @@
 
                 </LinearLayout>
 
+
+
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Tone Axis Controls"
+                    android:textStyle="bold"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/swAxisX"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Axis X" />
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/swAxisY"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Axis Y" />
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/swAxisZ"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Axis Z" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvRangeX"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="X range: 120 - 880 Hz"
+                    android:textSize="12sp"
+                    android:typeface="monospace" />
+
+                <com.google.android.material.slider.RangeSlider
+                    android:id="@+id/sliderRangeX"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="20"
+                    android:valueTo="2000"
+                    android:stepSize="10" />
+
+                <TextView
+                    android:id="@+id/tvRangeY"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Y range: 120 - 880 Hz"
+                    android:textSize="12sp"
+                    android:typeface="monospace" />
+
+                <com.google.android.material.slider.RangeSlider
+                    android:id="@+id/sliderRangeY"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="20"
+                    android:valueTo="2000"
+                    android:stepSize="10" />
+
+                <TextView
+                    android:id="@+id/tvRangeZ"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Z range: 120 - 880 Hz"
+                    android:textSize="12sp"
+                    android:typeface="monospace" />
+
+                <com.google.android.material.slider.RangeSlider
+                    android:id="@+id/sliderRangeZ"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="20"
+                    android:valueTo="2000"
+                    android:stepSize="10" />
 
                 <com.google.android.material.slider.Slider
                     android:id="@+id/sliderInterp"

@@ -43,6 +43,11 @@ class BleRingClient(
     private var scanStartMs: Long = 0L
     private var uniqueSeenCount: Int = 0
     private val lastSeenMsByAddress = ConcurrentHashMap<String, Long>()
+    private val rejectedAddresses: MutableSet<String> = HashSet()
+
+    private var activeDeviceAddress: String? = null
+    private var activeDeviceName: String? = null
+    private var rescanAfterIncompatibleDisconnect: Boolean = false
 
     fun getIsScanning(): Boolean = isScanning
     fun getUniqueSeenCount(): Int = uniqueSeenCount
@@ -70,6 +75,7 @@ class BleRingClient(
     // =========================
     fun startConnectFlow() {
         // Clean restart of the whole pipeline (button-friendly)
+        rejectedAddresses.clear()
         disconnect()
         startScan()
     }
@@ -179,9 +185,14 @@ class BleRingClient(
                 )
             }
 
-            // target check
-            if (addr.equals(Protocol.targetAddress, ignoreCase = true) || name == Protocol.targetName) {
-                onLog("Found TARGET: name=$name addr=$addr rssi=$rssi (connecting)")
+            val targetMatch = addr.equals(Protocol.targetAddress, ignoreCase = true) || name == Protocol.targetName
+            val hintedMatch = Protocol.enableCompatibilityProbe &&
+                    Protocol.compatibleNameHints.any { hint -> name.uppercase().contains(hint) }
+            val rejected = rejectedAddresses.contains(addr.uppercase())
+
+            if (targetMatch || (hintedMatch && !rejected)) {
+                val reason = if (targetMatch) "TARGET" else "COMPAT_PROBE"
+                onLog("Found $reason: name=$name addr=$addr rssi=$rssi (connecting)")
                 onState("Connecting")
                 stopScan()
                 connect(device)
@@ -203,6 +214,8 @@ class BleRingClient(
     // =========================
     @SuppressLint("MissingPermission")
     private fun connect(device: BluetoothDevice) {
+        activeDeviceAddress = device.address
+        activeDeviceName = device.name
         onLog("Connecting GATT...")
         onState("Connecting")
         gatt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -226,6 +239,11 @@ class BleRingClient(
                 onLog("Disconnected (state callback). status=$status")
                 cleanupGattFromCallback(g)
                 onState("Disconnected")
+
+                if (rescanAfterIncompatibleDisconnect) {
+                    rescanAfterIncompatibleDisconnect = false
+                    startScan()
+                }
             }
         }
 
@@ -234,6 +252,16 @@ class BleRingClient(
             onLog("Services discovered: status=$status")
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 onState("Disconnected")
+                return
+            }
+
+            if (!isGattCompatible(g)) {
+                val addr = activeDeviceAddress ?: "?"
+                val name = activeDeviceName ?: "<no-name>"
+                onLog("Incompatible device rejected: name=$name addr=$addr")
+                rejectedAddresses.add(addr.uppercase())
+                rescanAfterIncompatibleDisconnect = true
+                g.disconnect()
                 return
             }
 
@@ -285,6 +313,20 @@ class BleRingClient(
         }
     }
 
+    private fun isGattCompatible(g: BluetoothGatt): Boolean {
+        val hasNotify = Protocol.notifyUuids.any { uuid -> findCharacteristicByUuid(g, uuid) != null }
+        val hasWritableCmd = Protocol.cmdWriteUuids.any { uuid ->
+            val ch = findCharacteristicByUuid(g, uuid) ?: return@any false
+            val canWrite =
+                (ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0 ||
+                        (ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0
+            canWrite
+        }
+
+        onLog("compat check: hasNotify=$hasNotify hasWritableCmd=$hasWritableCmd")
+        return hasNotify && hasWritableCmd
+    }
+
     // =========================
     // Notifications (CCCD) - queued / serialized
     // =========================
@@ -319,6 +361,8 @@ class BleRingClient(
 
         try { g.close() } catch (_: Exception) {}
         if (gatt == g) gatt = null
+        activeDeviceAddress = null
+        activeDeviceName = null
     }
 
 
@@ -386,7 +430,7 @@ class BleRingClient(
             g.setPreferredPhy(
                 BluetoothDevice.PHY_LE_2M_MASK,
                 BluetoothDevice.PHY_LE_2M_MASK,
-                BluetoothGatt.PHY_OPTION_NO_PREFERRED
+                BluetoothDevice.PHY_OPTION_NO_PREFERRED
             )
             onLog("setPreferredPhy(2M) requested")
         }
