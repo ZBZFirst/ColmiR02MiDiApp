@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.math.floor
 
 class MainActivity : ComponentActivity() {
 
@@ -744,7 +745,7 @@ class MainActivity : ComponentActivity() {
                 val out = smoother.sample(nowSec) ?: continue
                 val (rot, g) = out
 
-                val pitchRssiDbm = rssiEma ?: -100f
+                val pitchRssiDbm = quantizeRssiForPitch(rssiEma ?: -100f)
                 val toneMapping = toneMapper.mapRotToTonesWithRssi(rot, pitchRssiDbm)
                 val smoothToneMapping = smoothToneMapping(toneMapping, nowSec)
                 val midiEvents = midiMapper.mapMotion(rot)
@@ -790,6 +791,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun quantizeRssiForPitch(rssiDbm: Float): Float {
+        // Bin RSSI by 5 dBm (absolute) to reduce micro-variation sensitivity.
+        // Example: -50..-54.999 -> -50, -55..-59.999 -> -55.
+        val absRssi = kotlin.math.abs(rssiDbm)
+        val binnedAbs = (floor(absRssi / 5f) * 5f).coerceIn(30f, 100f)
+        return -binnedAbs
     }
 
     private fun smoothToneMapping(target: ToneMapper.ToneMapping, nowSec: Double): ToneMapper.ToneMapping {
