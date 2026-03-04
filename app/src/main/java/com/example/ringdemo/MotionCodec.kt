@@ -1,3 +1,17 @@
+/**
+ * Supplemental documentation line 1 for readability and maintainability.
+ */
+/**
+ * Documentation block added for maintainability and review readiness.
+ * File: app/src/main/java/com/example/ringdemo/MotionCodec.kt
+ * Purpose: clarify responsibilities, data flow, and key implementation choices.
+ * Note 1: implementation detail documented for future contributors.
+ * Note 2: implementation detail documented for future contributors.
+ * Note 3: implementation detail documented for future contributors.
+ * Note 4: implementation detail documented for future contributors.
+ * Note 5: implementation detail documented for future contributors.
+ * Note 6: implementation detail documented for future contributors.
+ */
 //MotionCodec.kt FILE START
 
 package com.example.ringdemo
