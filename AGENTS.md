@@ -16,7 +16,7 @@ This file documents:
 - Notification subscription and command bootstrapping (`START_RAW_HEX`).
 - Type-3 motion decoding (`MotionCodec`).
 - Interpolation + smoothing (`RetargetingSmoother`) for stable UI/audio.
-- RSSI polling + EMA-based gain control.
+- RSSI polling + EMA-based pitch-window control for tone mapping (volume is user gain slider only).
 - Local synthesized audio via `ToneEngine` (3 sine voices).
 - Log file + on-screen tail logging.
 
@@ -43,6 +43,14 @@ This avoids hard-locking to one ring while still rejecting incompatible BLE devi
 
 ---
 
+## Documentation and UI consistency requirements
+- Keep `README.md` current when capabilities, setup, or release process changes.
+- Keep this `AGENTS.md` aligned with actual behavior; remove stale statements quickly.
+- Avoid inflated comment-only changes; prefer concise, high-signal comments near complex logic.
+- For XML screens, use shared dimension resources for text sizing to keep typography uniform.
+
+---
+
 ## Product constraints from current findings
 - Expanding gesture vocabulary aggressively is likely high-risk and time-consuming.
 - Ring behavior may differ depending on companion ecosystem (e.g., QRING app and Gadgetbridge-like integrations), so gesture availability may not be fully under our control.
@@ -57,7 +65,7 @@ This avoids hard-locking to one ring while still rejecting incompatible BLE devi
 3. GATT services discovered; notify/indicate enabled serially.
 4. Start command sent after notification queue completes.
 5. Incoming bytes decoded to motion, smoothed, shown in UI.
-6. Optional RSSI polling updates graph + tone gain.
+6. Optional RSSI polling updates graph + pitch-window input for tone mapping.
 7. Disconnect sequence sends stop commands and optional reboot.
 
 ---
