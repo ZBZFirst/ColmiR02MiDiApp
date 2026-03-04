@@ -609,12 +609,11 @@ class MainActivity : ComponentActivity() {
                 if (currentRssi < wavTriggerThresholdDbm) break
 
                 val played = wavPlayer.play(volume = 1f)
-                val baseDelay = (abs(currentRssi) * wavRepeatDelayMultiplier).toLong()
-                val minDelay = wavPlayer.getDurationMs().coerceAtLeast(10L)
-                val waitMs = maxOf(minDelay, baseDelay)
+                val positiveRssi = abs(currentRssi)
+                val waitMs = (positiveRssi * wavRepeatDelayMultiplier).toLong().coerceAtLeast(1L)
 
                 if (!played) {
-                    delay(minDelay)
+                    delay(10L)
                 } else {
                     delay(waitMs)
                 }
