@@ -596,8 +596,7 @@ class BleRingClient(
     // Backwards-compatible helper name
     @SuppressLint("MissingPermission")
     fun stopThenDisconnect(sendReboot: Boolean = false, onDone: (() -> Unit)? = null) {
-        stopLightsAndDisconnect(sendReboot = sendReboot)
-        onDone?.invoke()
+        stopLightsAndDisconnect(sendReboot = sendReboot, onDone = onDone)
     }
 
     @SuppressLint("MissingPermission")
