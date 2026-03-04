@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.midi.MidiDevice
 import android.media.midi.MidiInputPort
 import android.media.midi.MidiManager
+import android.os.Handler
+import android.os.Looper
 
 class MidiOutputRouter(
     context: Context,
@@ -31,20 +33,24 @@ class MidiOutputRouter(
         }
 
         val info = infos.first()
-        manager.openDevice(info) { opened ->
+        val listener = MidiManager.OnDeviceOpenedListener { opened: MidiDevice? ->
             if (opened == null) {
                 onLog("Failed to open MIDI device")
-                return@openDevice
+                return@OnDeviceOpenedListener
             }
+
             device = opened
             val port = opened.openInputPort(0)
             if (port == null) {
                 onLog("MIDI input port unavailable")
-                return@openDevice
+                return@OnDeviceOpenedListener
             }
+
             inputPort = port
             onLog("MIDI connected: ${info.properties}")
         }
+
+        manager.openDevice(info, listener, Handler(Looper.getMainLooper()))
     }
 
     fun send(events: List<MidiMapper.MidiEvent>) {
