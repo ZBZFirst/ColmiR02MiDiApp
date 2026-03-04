@@ -154,10 +154,8 @@ class MainActivity : ComponentActivity() {
 
     private var lastRssiMs: Long = 0L
 
-    // NEW: gain mapping uses |RSSI| (abs of negative dBm)
-    private val gainMaxAbs = 70f   // |RSSI| >= 75  => gain = 1.0
-    private val gainOffAbs = 50   // |RSSI| <= 40  => gain = 0.0
-    private var rssiGainScale = 1.0f
+    // Master output gain (volume only; RSSI no longer controls loudness)
+    private var masterGain = 1.0f
 
     // if RSSI stops updating, treat as ROAMING
     private val roamStaleMs  = 1500L
@@ -328,10 +326,7 @@ class MainActivity : ComponentActivity() {
             soundEnabled = !soundEnabled
             if (soundEnabled) {
                 toneEngine.start()
-                val startupGain = rssiEma?.let { ema ->
-                    (gainFromEma(ema) * rssiGainScale).coerceIn(0f, 1f)
-                } ?: 1f
-                toneEngine.setGain(startupGain)
+                toneEngine.setGain(masterGain)
                 toneEngine.setVoiceGains(1f, 1f, 1f)
                 btnSound.text = "Sound: ON"
                 tail("Sound ON")
@@ -371,14 +366,15 @@ class MainActivity : ComponentActivity() {
             tvWavRepeatMultiplier.text = "WAV repeat delay multiplier: ${wavRepeatDelayMultiplier}x"
         }
 
-        // RSSI->gain scaling control
-        sliderRssiGain.value = rssiGainScale
-        tvRssiGain.text = "RSSI gain scale: %.2fx".format(rssiGainScale)
+        // Master gain control (volume only)
+        sliderRssiGain.value = masterGain
+        tvRssiGain.text = "Gain: %.2f".format(masterGain)
         sliderRssiGain.addOnChangeListener { _: Slider, value: Float, fromUser: Boolean ->
             if (!fromUser) return@addOnChangeListener
-            rssiGainScale = value
-            tvRssiGain.text = "RSSI gain scale: %.2fx".format(rssiGainScale)
-            logWriter.log("rssi gain scale set: %.2f".format(rssiGainScale))
+            masterGain = value
+            tvRssiGain.text = "Gain: %.2f".format(masterGain)
+            if (soundEnabled && toneEngine.isRunning()) toneEngine.setGain(masterGain)
+            logWriter.log("master gain set: %.2f".format(masterGain))
         }
 
         // RSSI visualizer toggle (polling stays on regardless)
@@ -509,8 +505,7 @@ class MainActivity : ComponentActivity() {
 
                     // NEW: EMA + zone + audio fade
                     val ema = updateRssiEma(rssiDbm)
-                    val zone = updateZoneFromEma(ema)
-                    applyRssiAudio(ema, zone)
+                    updateZoneFromEma(ema)
                     maybeTriggerWavFromRssi(rssiDbm)
 
                     // Optional debug (uncomment if you want it noisy)
@@ -539,36 +534,62 @@ class MainActivity : ComponentActivity() {
     }
 
 
-    private fun gainFromEma(ema: Float): Float {
-        // ema is negative dBm; convert to magnitude like 75 for -75 dBm
-        val rssiAbs = -ema
 
-        return when {
-            // stronger RSSI (closer to 0 dBm) => louder
-            rssiAbs <= gainOffAbs -> 1f
-            // weaker RSSI => quieter
-            rssiAbs >= gainMaxAbs -> 0f
-            else -> {
-                // Map [gainOffAbs..gainMaxAbs] -> [1..0]
-                1f - ((rssiAbs - gainOffAbs) / (gainMaxAbs - gainOffAbs))
+    private fun maybeTriggerWavFromRssi(rssiDbm: Int) {
+        latestRssiDbm = rssiDbm
+
+        if (!soundEnabled || loadedWavUri == null) {
+            stopWavRepeatLoop()
+            lastRssiDbmForTrigger = rssiDbm
+            return
+        }
+
+        if (interpolateWavEnabled) {
+            if (rssiDbm >= wavTriggerThresholdDbm) {
+                startWavRepeatLoop()
+            } else {
+                stopWavRepeatLoop()
+            }
+            lastRssiDbmForTrigger = rssiDbm
+            return
+        }
+
+        stopWavRepeatLoop()
+        val previous = lastRssiDbmForTrigger
+        lastRssiDbmForTrigger = rssiDbm
+        if (previous == null) return
+
+        val crossedUp = previous < wavTriggerThresholdDbm && rssiDbm >= wavTriggerThresholdDbm
+        if (crossedUp) {
+            wavPlayer.play(volume = 1f)
+        }
+    }
+
+    private fun startWavRepeatLoop() {
+        if (wavRepeatJob?.isActive == true) return
+
+        wavRepeatJob = lifecycleScope.launch {
+            while (isActive && soundEnabled && interpolateWavEnabled && loadedWavUri != null) {
+                val currentRssi = latestRssiDbm ?: break
+                if (currentRssi < wavTriggerThresholdDbm) break
+
+                val played = wavPlayer.play(volume = 1f)
+                val positiveRssi = abs(currentRssi)
+                val waitMs = (positiveRssi * wavRepeatDelayMultiplier).toLong().coerceAtLeast(1L)
+
+                if (!played) {
+                    delay(10L)
+                } else {
+                    delay(waitMs)
+                }
             }
         }
     }
 
-
-    private fun applyRssiAudio(ema: Float, zone: ProxZone) {
-        if (!soundEnabled || !toneEngine.isRunning()) return
-
-        if (zone == ProxZone.ROAMING) {
-            toneEngine.setGain(0f)
-            return
-        }
-
-        val g = gainFromEma(ema)
-        val scaled = (g * rssiGainScale).coerceIn(0f, 1f)
-        toneEngine.setGain(scaled)
+    private fun stopWavRepeatLoop() {
+        try { wavRepeatJob?.cancel() } catch (_: Exception) {}
+        wavRepeatJob = null
     }
-
 
     private fun maybeTriggerWavFromRssi(rssiDbm: Int) {
         latestRssiDbm = rssiDbm
@@ -772,7 +793,7 @@ class MainActivity : ComponentActivity() {
                 val midiEvents = midiMapper.mapMotion(rot)
                 midiOutput.send(midiEvents)
 
-                // Volume is controlled by RSSI via setGain().
+                // Volume is controlled only by master gain slider.
                 if (soundEnabled && toneEngine.isRunning()) {
                     toneEngine.setFrequencies(toneMapping.fx, toneMapping.fy, toneMapping.fz)
                     toneEngine.setVoiceGains(toneMapping.gx, toneMapping.gy, toneMapping.gz)

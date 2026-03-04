@@ -12,11 +12,11 @@ This tracker captures the agreed implementation plan and progress for the audio-
 
 ## Phase checklist
 
-- [ ] **Phase 1 — Decouple loudness from RSSI**
-  - [ ] Replace `rssiGainScale` semantics with master `Gain` control.
-  - [ ] Remove RSSI->gain runtime path (`gainFromEma` / `applyRssiAudio`).
-  - [ ] Update UI labels from RSSI gain scaling to master gain.
-  - **Completion notes:** _pending_
+- [x] **Phase 1 — Decouple loudness from RSSI**
+  - [x] Replace `rssiGainScale` semantics with master `Gain` control.
+  - [x] Remove RSSI->gain runtime path (`gainFromEma` / `applyRssiAudio`).
+  - [x] Update UI labels from RSSI gain scaling to master gain.
+  - **Completion notes:** Completed in commit for Phase 1. Gain slider now directly sets `toneEngine` master gain, RSSI no longer calls gain mapping, and UI label text was updated to `Gain`.
 
 - [ ] **Phase 2 — Implement RSSI-defined pitch window**
   - [ ] Add RSSI normalization helper for `[-100..-30] -> [0..1]`.
@@ -50,6 +50,10 @@ This tracker captures the agreed implementation plan and progress for the audio-
 ---
 
 ## Progress log
+
+- [x] **Phase 1 completed**
+  - **Date:** 2026-03-04
+  - **Notes:** Decoupled loudness from RSSI; RSSI path retained for visualization/triggering only.
 
 - [x] **Tracker initialized**
   - **Date:** 2026-03-04
