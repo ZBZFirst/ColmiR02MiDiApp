@@ -28,6 +28,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
+import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
 
@@ -55,9 +56,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var btnLoadWav: MaterialButton
     private lateinit var sliderRssiGain: Slider
     private lateinit var sliderRssiTrigger: Slider
+    private lateinit var swInterpolateWav: SwitchMaterial
+    private lateinit var sliderWavRepeatMultiplier: Slider
     private lateinit var tvRssiGain: TextView
     private lateinit var tvWavStatus: TextView
     private lateinit var tvRssiTrigger: TextView
+    private lateinit var tvWavRepeatMultiplier: TextView
 
     private lateinit var swAxisX: SwitchMaterial
     private lateinit var swAxisY: SwitchMaterial
@@ -115,6 +119,10 @@ class MainActivity : ComponentActivity() {
     private var lastRssiDbmForTrigger: Int? = null
     private var wavTriggerThresholdDbm: Int = -65
     private var loadedWavUri: Uri? = null
+    private var interpolateWavEnabled = false
+    private var wavRepeatDelayMultiplier = 1.0f
+    private var wavRepeatJob: Job? = null
+    private var latestRssiDbm: Int? = null
 
     // -------------------------
     // BLE
@@ -184,7 +192,7 @@ class MainActivity : ComponentActivity() {
             val ok = wavPlayer.load(contentResolver, uri)
             if (ok) {
                 loadedWavUri = uri
-                tvWavStatus.text = "WAV sample: $uri"
+                tvWavStatus.text = "WAV sample: $uri (${wavPlayer.getDurationMs()} ms)"
                 tail("Loaded WAV trigger sample")
             } else {
                 tail("Failed to load WAV sample")
@@ -216,6 +224,7 @@ class MainActivity : ComponentActivity() {
         try { logWriter.close() } catch (_: Exception) {}
         try { stopRssiPolling() } catch (_: Exception) {}
         try { midiOutput.close() } catch (_: Exception) {}
+        try { stopWavRepeatLoop() } catch (_: Exception) {}
         try { wavPlayer.release() } catch (_: Exception) {}
     }
 
@@ -249,9 +258,12 @@ class MainActivity : ComponentActivity() {
         btnLoadWav = findViewById(R.id.btnLoadWav)
         sliderRssiGain = findViewById(R.id.sliderRssiGain)
         sliderRssiTrigger = findViewById(R.id.sliderRssiTrigger)
+        swInterpolateWav = findViewById(R.id.swInterpolateWav)
+        sliderWavRepeatMultiplier = findViewById(R.id.sliderWavRepeatMultiplier)
         tvRssiGain = findViewById(R.id.tvRssiGain)
         tvWavStatus = findViewById(R.id.tvWavStatus)
         tvRssiTrigger = findViewById(R.id.tvRssiTrigger)
+        tvWavRepeatMultiplier = findViewById(R.id.tvWavRepeatMultiplier)
 
         swAxisX = findViewById(R.id.swAxisX)
         swAxisY = findViewById(R.id.swAxisY)
@@ -325,6 +337,7 @@ class MainActivity : ComponentActivity() {
                 tail("Sound ON")
             } else {
                 toneEngine.stop()
+                stopWavRepeatLoop()
                 btnSound.text = "Sound: OFF"
                 tail("Sound OFF")
             }
@@ -340,6 +353,21 @@ class MainActivity : ComponentActivity() {
             if (!fromUser) return@addOnChangeListener
             wavTriggerThresholdDbm = value.toInt()
             tvRssiTrigger.text = "WAV trigger RSSI: ${wavTriggerThresholdDbm} dBm"
+        }
+
+        swInterpolateWav.isChecked = false
+        swInterpolateWav.setOnCheckedChangeListener { _, checked ->
+            interpolateWavEnabled = checked
+            if (!checked) stopWavRepeatLoop()
+            tail(if (checked) "Interpolate WAV ON" else "Interpolate WAV OFF")
+        }
+
+        sliderWavRepeatMultiplier.value = wavRepeatDelayMultiplier
+        tvWavRepeatMultiplier.text = "WAV repeat delay multiplier: %.1fx".format(wavRepeatDelayMultiplier)
+        sliderWavRepeatMultiplier.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            wavRepeatDelayMultiplier = value.coerceIn(1f, 5f)
+            tvWavRepeatMultiplier.text = "WAV repeat delay multiplier: %.1fx".format(wavRepeatDelayMultiplier)
         }
 
         // RSSI->gain scaling control
@@ -465,6 +493,7 @@ class MainActivity : ComponentActivity() {
 
                 if (state == "Disconnected") {
                     stopRssiPolling()
+                    stopWavRepeatLoop()
                     if (autoRetryEnabled) scheduleAutoRetry()
                 } else if (state == "Streaming") {
                     startRssiPolling()
@@ -541,20 +570,60 @@ class MainActivity : ComponentActivity() {
 
 
     private fun maybeTriggerWavFromRssi(rssiDbm: Int) {
+        latestRssiDbm = rssiDbm
+
         if (!soundEnabled || loadedWavUri == null) {
+            stopWavRepeatLoop()
             lastRssiDbmForTrigger = rssiDbm
             return
         }
 
+        if (interpolateWavEnabled) {
+            if (rssiDbm >= wavTriggerThresholdDbm) {
+                startWavRepeatLoop()
+            } else {
+                stopWavRepeatLoop()
+            }
+            lastRssiDbmForTrigger = rssiDbm
+            return
+        }
+
+        stopWavRepeatLoop()
         val previous = lastRssiDbmForTrigger
         lastRssiDbmForTrigger = rssiDbm
-
         if (previous == null) return
 
         val crossedUp = previous < wavTriggerThresholdDbm && rssiDbm >= wavTriggerThresholdDbm
         if (crossedUp) {
             wavPlayer.play(volume = 1f)
         }
+    }
+
+    private fun startWavRepeatLoop() {
+        if (wavRepeatJob?.isActive == true) return
+
+        wavRepeatJob = lifecycleScope.launch {
+            while (isActive && soundEnabled && interpolateWavEnabled && loadedWavUri != null) {
+                val currentRssi = latestRssiDbm ?: break
+                if (currentRssi < wavTriggerThresholdDbm) break
+
+                val played = wavPlayer.play(volume = 1f)
+                val baseDelay = (abs(currentRssi).toFloat() * wavRepeatDelayMultiplier).toLong()
+                val minDelay = wavPlayer.getDurationMs().coerceAtLeast(10L)
+                val waitMs = maxOf(minDelay, baseDelay)
+
+                if (!played) {
+                    delay(minDelay)
+                } else {
+                    delay(waitMs)
+                }
+            }
+        }
+    }
+
+    private fun stopWavRepeatLoop() {
+        try { wavRepeatJob?.cancel() } catch (_: Exception) {}
+        wavRepeatJob = null
     }
 
     // -------------------------
