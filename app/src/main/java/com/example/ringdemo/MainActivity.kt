@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Button
+import android.widget.CompoundButton
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -48,16 +49,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var btnSound: MaterialButton
     private lateinit var sliderRssiGain: Slider
     private lateinit var tvRssiGain: TextView
-
-    private lateinit var swAxisX: SwitchMaterial
-    private lateinit var swAxisY: SwitchMaterial
-    private lateinit var swAxisZ: SwitchMaterial
-    private lateinit var sliderRangeX: RangeSlider
-    private lateinit var sliderRangeY: RangeSlider
-    private lateinit var sliderRangeZ: RangeSlider
-    private lateinit var tvRangeX: TextView
-    private lateinit var tvRangeY: TextView
-    private lateinit var tvRangeZ: TextView
 
     private lateinit var swAxisX: SwitchMaterial
     private lateinit var swAxisY: SwitchMaterial
@@ -274,7 +265,7 @@ class MainActivity : ComponentActivity() {
         // RSSI->gain scaling control
         sliderRssiGain.value = rssiGainScale
         tvRssiGain.text = "RSSI gain scale: %.2fx".format(rssiGainScale)
-        sliderRssiGain.addOnChangeListener { _, value, fromUser ->
+        sliderRssiGain.addOnChangeListener { _: Slider, value: Float, fromUser: Boolean ->
             if (!fromUser) return@addOnChangeListener
             rssiGainScale = value
             tvRssiGain.text = "RSSI gain scale: %.2fx".format(rssiGainScale)
@@ -305,23 +296,23 @@ class MainActivity : ComponentActivity() {
         updateRangeText('Y', 120f, 880f)
         updateRangeText('Z', 120f, 880f)
 
-        swAxisX.setOnCheckedChangeListener { _, checked -> toneMapper.setAxisEnabled('X', checked) }
-        swAxisY.setOnCheckedChangeListener { _, checked -> toneMapper.setAxisEnabled('Y', checked) }
-        swAxisZ.setOnCheckedChangeListener { _, checked -> toneMapper.setAxisEnabled('Z', checked) }
+        swAxisX.setOnCheckedChangeListener { _: CompoundButton, checked: Boolean -> toneMapper.setAxisEnabled('X', checked) }
+        swAxisY.setOnCheckedChangeListener { _: CompoundButton, checked: Boolean -> toneMapper.setAxisEnabled('Y', checked) }
+        swAxisZ.setOnCheckedChangeListener { _: CompoundButton, checked: Boolean -> toneMapper.setAxisEnabled('Z', checked) }
 
-        sliderRangeX.addOnChangeListener { _, _, fromUser ->
+        sliderRangeX.addOnChangeListener { _: RangeSlider, _: Float, fromUser: Boolean ->
             if (!fromUser) return@addOnChangeListener
             val values = sliderRangeX.values
             toneMapper.setAxisRange('X', values[0], values[1])
             updateRangeText('X', values[0], values[1])
         }
-        sliderRangeY.addOnChangeListener { _, _, fromUser ->
+        sliderRangeY.addOnChangeListener { _: RangeSlider, _: Float, fromUser: Boolean ->
             if (!fromUser) return@addOnChangeListener
             val values = sliderRangeY.values
             toneMapper.setAxisRange('Y', values[0], values[1])
             updateRangeText('Y', values[0], values[1])
         }
-        sliderRangeZ.addOnChangeListener { _, _, fromUser ->
+        sliderRangeZ.addOnChangeListener { _: RangeSlider, _: Float, fromUser: Boolean ->
             if (!fromUser) return@addOnChangeListener
             val values = sliderRangeZ.values
             toneMapper.setAxisRange('Z', values[0], values[1])
