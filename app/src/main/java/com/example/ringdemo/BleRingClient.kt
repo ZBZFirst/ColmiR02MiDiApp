@@ -219,6 +219,7 @@ class BleRingClient(
             onLog("GATT state change: status=$status newState=$newState")
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 onLog("Connected. Discovering services...")
+                requestHighThroughputLink(g)
                 onState("Discovering services")
                 g.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
@@ -372,6 +373,25 @@ class BleRingClient(
 
         if (ok) onState("Streaming")
     }
+
+    @SuppressLint("MissingPermission")
+    private fun requestHighThroughputLink(g: BluetoothGatt) {
+        val priorityOk = g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        onLog("requestConnectionPriority(HIGH) => $priorityOk")
+
+        val mtuOk = g.requestMtu(247)
+        onLog("requestMtu(247) => $mtuOk")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            g.setPreferredPhy(
+                BluetoothDevice.PHY_LE_2M_MASK,
+                BluetoothDevice.PHY_LE_2M_MASK,
+                BluetoothGatt.PHY_OPTION_NO_PREFERRED
+            )
+            onLog("setPreferredPhy(2M) requested")
+        }
+    }
+
 
     private fun propsString(p: Int): String {
         val parts = ArrayList<String>()
