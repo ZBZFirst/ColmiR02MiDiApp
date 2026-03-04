@@ -1,74 +1,178 @@
 # AGENTS.md
 
-## Project overview
-This repository is an Android app (`app` module) that connects to a specific BLE ring, subscribes to ring notifications, decodes motion packets, smooths motion values for UI/audio, and optionally synthesizes audio whose gain is driven by RSSI proximity.
+## Purpose of this document
+This app currently proves BLE connectivity + motion decoding + basic sound feedback. It is **not yet a usable MIDI controller product**.
 
-Primary code package: `com.example.ringdemo`.
+This file documents:
+1. what the app does today,
+2. why current design limits performance/usability,
+3. how we should evolve it into a low-latency, reliable MIDI controller,
+4. which outputs/artifacts we should generate going forward.
 
-## End-to-end app flow
-1. **Startup (`MainActivity`)**
-   - Binds XML views, initializes log file output, wires UI controls, creates BLE client, starts periodic loops (dashboard + log flush), and requests Bluetooth permissions.
-2. **Connect flow**
-   - `BleRingClient.startConnectFlow()` performs a clean disconnect and starts BLE scan.
-   - Scanner logs nearby devices and auto-connects to the target ring by `Protocol.targetAddress` or `Protocol.targetName`.
-3. **GATT setup**
-   - On connection: requests high-throughput link settings (connection priority, MTU, preferred PHY), discovers services, and enables notifications/indications for `Protocol.notifyUuids` using a serialized descriptor-write queue.
-4. **Command bootstrapping**
-   - After notification setup completes, `START_RAW_HEX` is sent to begin the data stream.
-5. **Incoming data path**
-   - Notification payloads are logged and routed through `MotionCodec.decodeType3Motion()`.
-   - Decoded values are ingested into `RetargetingSmoother`.
-   - Dashboard loop samples smoother at ~30 Hz and updates UI (`rot`, `g`, packet rate).
-6. **Adaptive smoothing**
-   - Packet rate is estimated once per second; if auto mode is enabled, interpolation time is adjusted based on rate EMA and clamped by slider cap.
-7. **RSSI + audio path**
-   - Optional RSSI poll loop calls `readRemoteRssi()` every 250 ms.
-   - RSSI callback updates graph samples, computes RSSI EMA, classifies zone (`ACTIVE`/`ROAMING`), and sets `ToneEngine` master gain.
-   - Audio frequencies always come from smoothed rotation; loudness comes from RSSI logic.
-8. **Disconnect/retry behavior**
-   - Disconnect button sends stop sequence (optionally reboot) before disconnect.
-   - If disconnected unexpectedly and auto-retry is enabled, reconnect is attempted after delay.
+---
 
-## Core components and responsibilities
-- `MainActivity.kt`
-  - Owns UI state, permissions, auto-retry orchestration, log tail display, adaptive smoothing controls, RSSI visualizer toggle, and sound toggle.
-- `BleRingClient.kt`
-  - Encapsulates BLE scanning, GATT connection state, notification enable queue, command writes, RSSI reads, and stop/disconnect sequencing.
-- `Protocol.kt`
-  - Defines target identity, notify/write UUIDs, and command framing/checksum rules.
-- `MotionCodec.kt`
-  - Decodes Type-3 motion packets into rotation-like values and acceleration in g.
-- `RetargetingSmoother.kt`
-  - Handles interpolation/retargeting to reduce motion discontinuities.
-- `ToneEngine.kt`
-  - Real-time 3-voice sine synthesis via `AudioTrack`; frequency and gain are updated from app state.
-- `RssiPlotView.kt`
-  - Lightweight custom view for plotting recent RSSI samples.
-- `LogWriter.kt`
-  - Buffered timestamped logfile writer in app external files dir.
+## Current reality (what exists today)
+- BLE scan/connect to a specific ring (`Protocol.targetAddress` / `targetName`).
+- Notification subscription and command bootstrapping (`START_RAW_HEX`).
+- Type-3 motion decoding (`MotionCodec`).
+- Interpolation + smoothing (`RetargetingSmoother`) for stable UI/audio.
+- RSSI polling + EMA-based gain control.
+- Local synthesized audio via `ToneEngine` (3 sine voices).
+- Log file + on-screen tail logging.
 
-## Runtime outputs created by the app
-1. **Persistent log files (primary output)**
-   - Path format: `<external-files>/logs/ring_yyyyMMdd_HHmmss.log`.
-   - Includes status transitions, scan/connect lifecycle, command writes, packet summaries, interpolation tuning events, and RSSI read failures.
-2. **On-screen tail log**
-   - Recent in-memory log lines shown in reverse order in `tvTail` (bounded queue).
-3. **Live telemetry UI**
-   - `tvRot`, `tvG`, `tvRate`, interpolation status text, and status banner.
-4. **RSSI graph output**
-   - In-memory time series (bounded) rendered by `RssiPlotView`.
-5. **Audio output**
-   - Mono synthesized audio stream from `ToneEngine`, with frequencies from motion and gain from RSSI zone/EMA.
+### Why this is not a MIDI controller yet
+- No Android MIDI API output path (no `MidiManager` / virtual MIDI device / USB/BLE MIDI transport).
+- No stable gesture-to-MIDI mapping layer with user-configurable mappings.
+- No timing/scheduling guarantees for musical events (jitter-aware timestamping, clock integration).
+- No preset/config persistence for controller mappings.
+- No performance instrumentation (latency/jitter/drop-rate KPIs).
 
-## Repository/build artifacts you will see
-- `app/release/app-release.apk` and `app/release/output-metadata.json`: generated release artifacts currently tracked.
-- `app/release/baselineProfiles/.../*.dm`: generated baseline profile artifacts currently tracked.
+---
+
+## Product constraints from current findings
+- Expanding gesture vocabulary aggressively is likely high-risk and time-consuming.
+- Ring behavior may differ depending on companion ecosystem (e.g., QRING app and Gadgetbridge-like integrations), so gesture availability may not be fully under our control.
+- **Scope decision:** target a reliable set of **up to 5 gestures max** first, instead of broad gesture expansion.
+- Motion/accel tone control remains a core requirement: keep direct sound control and map axes to tones with per-axis enable/disable and configurable pitch ranges.
+
+---
+
+## Current flow (as-built)
+1. `MainActivity` starts, binds UI, initializes logger, BLE client, and loops.
+2. BLE scans and connects via `BleRingClient`.
+3. GATT services discovered; notify/indicate enabled serially.
+4. Start command sent after notification queue completes.
+5. Incoming bytes decoded to motion, smoothed, shown in UI.
+6. Optional RSSI polling updates graph + tone gain.
+7. Disconnect sequence sends stop commands and optional reboot.
+
+---
+
+## Critical bottlenecks and risks
+
+### 1) Architecture coupling
+`MainActivity` owns too much orchestration (BLE state, DSP decisions, UI updates, retry logic, audio control). This raises risk of UI thread contention and makes real-time behavior hard to reason about.
+
+**Better direction:** move to layered pipeline:
+- `BleDataSource` (I/O only)
+- `MotionProcessor` (decode/filter/features)
+- `GestureEngine` (limited gesture detection, max 5)
+- `MidiMapper` (semantic mapping)
+- `ToneMapper` (axis-to-tone control)
+- `OutputRouter` (MIDI + optional audio monitor)
+- `UiViewModel` (presentation state only)
+
+### 2) Poll-based RSSI + frequent logging overhead
+250 ms polling and verbose logging can create unnecessary work and timing noise.
+
+**Better direction:**
+- make polling adaptive or event-driven when possible,
+- downgrade high-frequency logs to sampled/trace levels,
+- keep real-time path allocation-free where feasible.
+
+### 3) No explicit latency budget
+There is no stated end-to-end target (sensor packet -> MIDI event).
+
+**Better direction:** define budgets, e.g.
+- decode + filter: <= 2 ms
+- mapping + route: <= 1 ms
+- total median latency target: <= 12 ms (device-dependent)
+- jitter p95 target: <= 4 ms
+
+### 4) Audio prototype can mask MIDI requirements
+`ToneEngine` is useful for feedback, but product value is MIDI output interoperability.
+
+**Better direction:** treat synth audio as a first-class monitor/test mode while still prioritizing MIDI transport and mapping UX.
+
+---
+
+## Target architecture (how we SHOULD build this)
+
+### A) Data pipeline
+`BLE Packet` -> `Decoder` -> `Sensor Frame Stream` -> `Feature Extractor` -> (`GestureEngine` + `MidiMapper` + `ToneMapper`) -> `Output`
+
+- **Decoder:** parse protocol packets, validate checksums/lengths, produce typed frames.
+- **Feature extractor:** derive stable controls (tilt, twist velocity, gesture onset/offset, stillness).
+- **GestureEngine (scoped):** detect and stabilize **up to 5 gestures** only; avoid open-ended expansion.
+- **MidiMapper:** configurable transforms to MIDI events:
+  - tilt X -> CC (example CC1/mod wheel)
+  - tilt Y -> CC (example CC74/brightness)
+  - twist -> Pitch Bend or CC
+  - gestures (max 5) -> Note/CC triggers
+- **ToneMapper:**
+  - map accel/rotation axes to up to 3 tones,
+  - allow axis enable/disable (X/Y/Z on/off),
+  - allow independent min/max frequency range per tone/axis.
+- **Output:** Android MIDI + optional BLE MIDI/USB MIDI + local audio monitor.
+
+### B) Threading model
+- BLE callback thread: ingest only, no heavy compute.
+- Processing coroutine/worker: decode/filter/gesture/map.
+- Output worker: MIDI/audio dispatch with timestamp support.
+- UI thread: render sampled state, never own business logic.
+
+### C) Configuration model
+Add a persisted mapping schema (JSON or Proto DataStore):
+- MIDI channel + CC/note numbers,
+- gesture map (fixed list up to 5),
+- per-axis tone enable flags,
+- per-axis/tone frequency ranges (min/max Hz),
+- smoothing constants and dead zones,
+- preset names + quick switching.
+
+### D) Reliability model
+- State machine with explicit states: `Idle -> Scanning -> Connecting -> Subscribing -> Streaming -> Degraded -> Reconnecting`.
+- Backoff strategy for retries.
+- Heartbeat/staleness detection to mute/hold MIDI safely.
+- Capability checks for companion-app-dependent behaviors; degrade gracefully when unavailable.
+
+---
+
+## Outputs we should create going forward
+
+### Runtime outputs (must-have)
+1. **MIDI event stream output**
+   - Primary product output: CC/Note/Pitch events routed to selected MIDI endpoint.
+2. **Tone mapping control output**
+   - Real-time monitor state: enabled axes, current frequencies, and active tone ranges.
+3. **Session performance report**
+   - Per run metrics: packet rate, decode failures, median/p95 latency, jitter, reconnect count.
+4. **Structured logs**
+   - Keep text logs, but also output machine-readable structured events for analysis.
+5. **Mapping snapshot export**
+   - Export/import controller preset and calibration values.
+
+### Build/dev outputs (must-have)
+1. **Benchmark results**
+   - Macrobenchmark for UI jank and startup.
+   - Microbenchmarks for decode/filter/map throughput.
+2. **Protocol test vectors**
+   - Sample packet corpus + expected decode outputs for regression tests.
+3. **Golden mapping tests**
+   - Deterministic tests from sensor frames -> expected MIDI events and tone outputs.
+4. **Gesture-capability matrix**
+   - Document which gestures are usable across tested ring/app combinations (including QRING and Gadgetbridge-like scenarios).
+
+---
+
+## Implementation priorities (recommended order)
+1. Add MIDI output service + minimal mapper (single CC + Note).
+2. Add axis-to-tone mapper controls:
+   - X/Y/Z axis toggles,
+   - up to 3 tone lanes,
+   - per-lane frequency min/max range controls.
+3. Implement fixed gesture engine with **max 5 gestures** and stable debouncing.
+4. Extract logic from `MainActivity` into pipeline components.
+5. Introduce persisted mapping presets and calibration.
+6. Add latency/jitter instrumentation and dashboard.
+7. Reduce runtime logging overhead in fast paths.
+
+---
 
 ## Practical guidance for future agents
-- Keep BLE descriptor writes serialized; avoid parallel CCCD writes.
-- Preserve deferred command behavior: streaming start should occur only after notifications are fully enabled.
-- Respect the distinction between:
-  - motion frequency mapping (`setFrequencies`) and
-  - proximity loudness mapping (`setGain`).
-- If adjusting RSSI thresholds, update comments and mapping expectations together.
-- Log lifecycle/status changes generously; this app relies heavily on logfile diagnostics in the field.
+- Preserve serialized descriptor writes for CCCD setup.
+- Keep command bootstrapping deferred until subscriptions are complete.
+- Avoid adding high-frequency allocations/logging in callback paths.
+- Any change to smoothing, gesture detection, or tone mapping should include measurable latency/jitter impact notes.
+- Treat “max 5 reliable gestures” as a hard product boundary unless explicit new evidence supports expansion.
+- Prioritize MIDI correctness/interoperability and controllable tone mapping over UI polish unless explicitly requested.
