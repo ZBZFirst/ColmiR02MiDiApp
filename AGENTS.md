@@ -29,6 +29,20 @@ This file documents:
 
 ---
 
+
+## Adding a new Colmi ring (onboarding flow)
+Use a two-step approach:
+1. **Discovery:** scan BLE network for likely devices (name/address hints).
+2. **Compatibility probe:** connect candidate, discover services, then verify that required characteristics exist:
+   - at least one notify UUID from `Protocol.notifyUuids`
+   - at least one writable command UUID from `Protocol.cmdWriteUuids`
+
+If compatibility check fails, disconnect and continue scanning. If it passes, continue subscription/start-stream sequence.
+
+This avoids hard-locking to one ring while still rejecting incompatible BLE devices quickly.
+
+---
+
 ## Product constraints from current findings
 - Expanding gesture vocabulary aggressively is likely high-risk and time-consuming.
 - Ring behavior may differ depending on companion ecosystem (e.g., QRING app and Gadgetbridge-like integrations), so gesture availability may not be fully under our control.

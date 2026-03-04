@@ -12,6 +12,7 @@ It uses `AGENTS.md` as the source-of-truth reference for:
 ## [Unreleased]
 
 ### Added
+- Added compatibility-probe onboarding flow for new Colmi rings (scan candidate -> GATT UUID check -> accept/reject and continue scanning).
 - Initial `CHANGELOG.md` with milestone-driven tracking tied directly to `AGENTS.md`.
 - Execution checklist for turning the roadmap into shippable work.
 - Added RSSI gain scaling slider control so RSSI-to-audio gain response can be tuned live.
