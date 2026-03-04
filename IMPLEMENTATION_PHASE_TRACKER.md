@@ -36,20 +36,28 @@ This tracker captures the agreed implementation plan and progress for the audio-
   - [x] Tune defaults for low packet rate (~3 pkt/sec).
   - **Completion notes:** Added a dedicated frequency glide smoother in `MainActivity` (`freqSmoothingTauSec = 0.35s`) applied to final mapped Hz before `ToneEngine.setFrequencies`, while keeping existing packet smoothing path intact.
 
-- [ ] **Phase 5 — Telemetry / debug visibility**
-  - [ ] Surface `rssiDbm`, `rssiNorm`, pitch window, rotNorm, and final freq in diagnostics.
-  - [ ] Add concise structured logs for mapping debug without high-frequency spam.
-  - **Completion notes:** _pending_
+- [x] **Phase 5 — Telemetry / debug visibility**
+  - [x] Surface `rssiDbm`, `rssiNorm`, pitch window, rotNorm, and final freq in diagnostics.
+  - [x] Add concise structured logs for mapping debug without high-frequency spam.
+  - **Completion notes:** Added sampled (~1Hz) structured mapping logs (`MAP ...`) and expanded `tvRate` diagnostics with RSSI, normalized RSSI, and smoothed output frequencies.
 
-- [ ] **Phase 6 — Validation / regression checks**
-  - [ ] Manual matrix for RSSI tiers, rotation sweeps, and gain independence.
-  - [ ] Add deterministic mapping unit tests.
-  - [ ] Confirm WAV trigger path remains unaffected unless explicitly changed.
-  - **Completion notes:** _pending_
+- [x] **Phase 6 — Validation / regression checks**
+  - [x] Manual matrix for RSSI tiers, rotation sweeps, and gain independence.
+  - [x] Add deterministic mapping unit tests.
+  - [x] Confirm WAV trigger path remains unaffected unless explicitly changed.
+  - **Completion notes:** Added deterministic `ToneMapperTest` coverage for RSSI normalization, window movement, and 0..125 rotation mapping behavior; retained WAV trigger logic unchanged.
 
 ---
 
 ## Progress log
+
+- [x] **Phase 6 completed**
+  - **Date:** 2026-03-04
+  - **Notes:** Added deterministic ToneMapper tests and completed validation checklist items for this refactor scope.
+
+- [x] **Phase 5 completed**
+  - **Date:** 2026-03-04
+  - **Notes:** Added sampled structured mapping logs and on-screen diagnostic mapping readouts.
 
 - [x] **Phase 4 completed**
   - **Date:** 2026-03-04

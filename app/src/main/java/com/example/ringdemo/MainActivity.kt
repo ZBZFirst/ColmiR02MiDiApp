@@ -141,6 +141,7 @@ class MainActivity : ComponentActivity() {
     private var pktCount = 0
     private var rateT0Ms = 0L
     private var lastHz = 0.0
+    private var lastMappingLogMs = 0L
 
     // Retry policy
     private var autoRetryEnabled = true
@@ -749,6 +750,26 @@ class MainActivity : ComponentActivity() {
                 val midiEvents = midiMapper.mapMotion(rot)
                 midiOutput.send(midiEvents)
 
+                val rssiNorm = toneMapper.normalizeRssiForPitch(pitchRssiDbm)
+                val xWindow = toneMapper.computePitchWindow(toneMapper.x, pitchRssiDbm)
+                val yWindow = toneMapper.computePitchWindow(toneMapper.y, pitchRssiDbm)
+                val zWindow = toneMapper.computePitchWindow(toneMapper.z, pitchRssiDbm)
+
+                val nowMs = System.currentTimeMillis()
+                if (nowMs - lastMappingLogMs >= 1000L) {
+                    lastMappingLogMs = nowMs
+                    logWriter.log(
+                        "MAP rssi=%.1f norm=%.3f xWin=[%.0f..%.0f] yWin=[%.0f..%.0f] zWin=[%.0f..%.0f] f=[%.1f,%.1f,%.1f]".format(
+                            pitchRssiDbm,
+                            rssiNorm,
+                            xWindow.minHz, xWindow.maxHz,
+                            yWindow.minHz, yWindow.maxHz,
+                            zWindow.minHz, zWindow.maxHz,
+                            smoothToneMapping.fx, smoothToneMapping.fy, smoothToneMapping.fz,
+                        )
+                    )
+                }
+
                 // Volume is controlled only by master gain slider.
                 if (soundEnabled && toneEngine.isRunning()) {
                     toneEngine.setFrequencies(smoothToneMapping.fx, smoothToneMapping.fy, smoothToneMapping.fz)
@@ -758,7 +779,14 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread {
                     tvRot.text = "rot: (%.1f, %.1f, %.1f)".format(rot.a, rot.b, rot.c)
                     tvG.text = "g:   (%+.3f, %+.3f, %+.3f)".format(g.a, g.b, g.c)
-                    tvRate.text = "rate: %.1f pkt/s".format(lastHz)
+                    tvRate.text = "rate: %.1f pkt/s | rssi: %.0f norm: %.2f | f: %.0f %.0f %.0f".format(
+                        lastHz,
+                        pitchRssiDbm,
+                        rssiNorm,
+                        smoothToneMapping.fx,
+                        smoothToneMapping.fy,
+                        smoothToneMapping.fz,
+                    )
                 }
             }
         }
