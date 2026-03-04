@@ -173,7 +173,6 @@ class MainActivity : ComponentActivity() {
 
         midiOutput.connectFirstAvailable()
         ensureBluetoothAndPermissions()
-        startRssiPolling()
         shakeSelectDeviceButton()
     }
 
@@ -280,7 +279,10 @@ class MainActivity : ComponentActivity() {
             soundEnabled = !soundEnabled
             if (soundEnabled) {
                 toneEngine.start()
-                toneEngine.setGain(0f) // start muted until RSSI logic sets it
+                val startupGain = rssiEma?.let { ema ->
+                    (gainFromEma(ema) * rssiGainScale).coerceIn(0f, 1f)
+                } ?: 1f
+                toneEngine.setGain(startupGain)
                 toneEngine.setVoiceGains(1f, 1f, 1f)
                 btnSound.text = "Sound: ON"
                 tail("Sound ON")
@@ -413,7 +415,10 @@ class MainActivity : ComponentActivity() {
                 setStatus("State: $state")
 
                 if (state == "Disconnected") {
+                    stopRssiPolling()
                     if (autoRetryEnabled) scheduleAutoRetry()
+                } else if (state == "Streaming") {
+                    startRssiPolling()
                 }
             },
             onRssi = { rssiDbm ->
@@ -459,11 +464,13 @@ class MainActivity : ComponentActivity() {
         val rssiAbs = -ema
 
         return when {
-            rssiAbs >= gainMaxAbs -> 1f
-            rssiAbs <= gainOffAbs -> 0f
+            // stronger RSSI (closer to 0 dBm) => louder
+            rssiAbs <= gainOffAbs -> 1f
+            // weaker RSSI => quieter
+            rssiAbs >= gainMaxAbs -> 0f
             else -> {
-                // Map [gainOffAbs..gainMaxAbs] -> [0..1]
-                (rssiAbs - gainOffAbs) / (gainMaxAbs - gainOffAbs)
+                // Map [gainOffAbs..gainMaxAbs] -> [1..0]
+                1f - ((rssiAbs - gainOffAbs) / (gainMaxAbs - gainOffAbs))
             }
         }
     }
@@ -479,7 +486,7 @@ class MainActivity : ComponentActivity() {
 
         val g = gainFromEma(ema)
         val scaled = (g * rssiGainScale).coerceIn(0f, 1f)
-        toneEngine.setGain(scaled)  // <= 40 abs => 0, >= 75 abs => 1, then slider scaled
+        toneEngine.setGain(scaled)
     }
 
 
