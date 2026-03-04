@@ -16,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.slider.RangeSlider
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.Job
@@ -45,6 +46,18 @@ class MainActivity : ComponentActivity() {
     private lateinit var tvInterp: TextView
 
     private lateinit var btnSound: MaterialButton
+    private lateinit var sliderRssiGain: Slider
+    private lateinit var tvRssiGain: TextView
+
+    private lateinit var swAxisX: SwitchMaterial
+    private lateinit var swAxisY: SwitchMaterial
+    private lateinit var swAxisZ: SwitchMaterial
+    private lateinit var sliderRangeX: RangeSlider
+    private lateinit var sliderRangeY: RangeSlider
+    private lateinit var sliderRangeZ: RangeSlider
+    private lateinit var tvRangeX: TextView
+    private lateinit var tvRangeY: TextView
+    private lateinit var tvRangeZ: TextView
 
     private lateinit var btnRssi: Button
     private lateinit var rssiPlot: RssiPlotView
@@ -84,6 +97,9 @@ class MainActivity : ComponentActivity() {
     // Sound synthesis
     // -------------------------
     private val toneEngine = ToneEngine()
+    private val toneMapper = ToneMapper()
+    private val midiMapper = MidiMapper()
+    private lateinit var midiOutput: MidiOutputRouter
     private var soundEnabled = false
 
     // -------------------------
@@ -116,7 +132,7 @@ class MainActivity : ComponentActivity() {
     // NEW: gain mapping uses |RSSI| (abs of negative dBm)
     private val gainMaxAbs = 70f   // |RSSI| >= 75  => gain = 1.0
     private val gainOffAbs = 50   // |RSSI| <= 40  => gain = 0.0
-
+    private var rssiGainScale = 1.0f
 
     // if RSSI stops updating, treat as ROAMING
     private val roamStaleMs  = 1500L
@@ -148,6 +164,7 @@ class MainActivity : ComponentActivity() {
         startDashboardLoop()
         startLogFlushLoop()
 
+        midiOutput.connectFirstAvailable()
         ensureBluetoothAndPermissions()
     }
 
@@ -158,6 +175,7 @@ class MainActivity : ComponentActivity() {
         try { toneEngine.stop() } catch (_: Exception) {}
         try { logWriter.close() } catch (_: Exception) {}
         try { stopRssiPolling() } catch (_: Exception) {}
+        try { midiOutput.close() } catch (_: Exception) {}
     }
 
     // -------------------------
@@ -185,12 +203,28 @@ class MainActivity : ComponentActivity() {
         tvInterp = findViewById(R.id.tvInterp)
 
         btnSound = findViewById(R.id.btnSound)
+        sliderRssiGain = findViewById(R.id.sliderRssiGain)
+        tvRssiGain = findViewById(R.id.tvRssiGain)
+
+        swAxisX = findViewById(R.id.swAxisX)
+        swAxisY = findViewById(R.id.swAxisY)
+        swAxisZ = findViewById(R.id.swAxisZ)
+        sliderRangeX = findViewById(R.id.sliderRangeX)
+        sliderRangeY = findViewById(R.id.sliderRangeY)
+        sliderRangeZ = findViewById(R.id.sliderRangeZ)
+        tvRangeX = findViewById(R.id.tvRangeX)
+        tvRangeY = findViewById(R.id.tvRangeY)
+        tvRangeZ = findViewById(R.id.tvRangeZ)
     }
 
     private fun initLogger() {
         logWriter = LogWriter(this)
         tvLogPath.text = "Log: ${logWriter.path()}"
         logWriter.log("RingDemo start. Log file: ${logWriter.path()}")
+        midiOutput = MidiOutputRouter(this) { msg ->
+            logWriter.log(msg)
+            tail(msg)
+        }
     }
 
     private fun initControls() {
@@ -217,6 +251,7 @@ class MainActivity : ComponentActivity() {
             if (soundEnabled) {
                 toneEngine.start()
                 toneEngine.setGain(0f) // start muted until RSSI logic sets it
+                toneEngine.setVoiceGains(1f, 1f, 1f)
                 btnSound.text = "Sound: ON"
                 tail("Sound ON")
             } else {
@@ -224,6 +259,16 @@ class MainActivity : ComponentActivity() {
                 btnSound.text = "Sound: OFF"
                 tail("Sound OFF")
             }
+        }
+
+        // RSSI->gain scaling control
+        sliderRssiGain.value = rssiGainScale
+        tvRssiGain.text = "RSSI gain scale: %.2fx".format(rssiGainScale)
+        sliderRssiGain.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            rssiGainScale = value
+            tvRssiGain.text = "RSSI gain scale: %.2fx".format(rssiGainScale)
+            logWriter.log("rssi gain scale set: %.2f".format(rssiGainScale))
         }
 
         // RSSI graph/poll toggle
@@ -236,6 +281,41 @@ class MainActivity : ComponentActivity() {
                 tail("RSSI Visualizer OFF")
                 stopRssiPolling()
             }
+        }
+
+        // Tone mapper controls
+        swAxisX.isChecked = true
+        swAxisY.isChecked = true
+        swAxisZ.isChecked = true
+
+        sliderRangeX.values = listOf(120f, 880f)
+        sliderRangeY.values = listOf(120f, 880f)
+        sliderRangeZ.values = listOf(120f, 880f)
+        updateRangeText('X', 120f, 880f)
+        updateRangeText('Y', 120f, 880f)
+        updateRangeText('Z', 120f, 880f)
+
+        swAxisX.setOnCheckedChangeListener { _, checked -> toneMapper.setAxisEnabled('X', checked) }
+        swAxisY.setOnCheckedChangeListener { _, checked -> toneMapper.setAxisEnabled('Y', checked) }
+        swAxisZ.setOnCheckedChangeListener { _, checked -> toneMapper.setAxisEnabled('Z', checked) }
+
+        sliderRangeX.addOnChangeListener { _, _, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            val values = sliderRangeX.values
+            toneMapper.setAxisRange('X', values[0], values[1])
+            updateRangeText('X', values[0], values[1])
+        }
+        sliderRangeY.addOnChangeListener { _, _, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            val values = sliderRangeY.values
+            toneMapper.setAxisRange('Y', values[0], values[1])
+            updateRangeText('Y', values[0], values[1])
+        }
+        sliderRangeZ.addOnChangeListener { _, _, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            val values = sliderRangeZ.values
+            toneMapper.setAxisRange('Z', values[0], values[1])
+            updateRangeText('Z', values[0], values[1])
         }
 
         // Interp controls defaults
@@ -365,7 +445,8 @@ class MainActivity : ComponentActivity() {
         }
 
         val g = gainFromEma(ema)
-        toneEngine.setGain(g)  // <= 40 abs => 0, >= 75 abs => 1
+        val scaled = (g * rssiGainScale).coerceIn(0f, 1f)
+        toneEngine.setGain(scaled)  // <= 40 abs => 0, >= 75 abs => 1, then slider scaled
     }
 
 
@@ -402,6 +483,15 @@ class MainActivity : ComponentActivity() {
             tailLines.addLast(line)
             while (tailLines.size > TAIL_MAX_LINES) tailLines.removeFirst()
             tvTail.text = tailLines.asReversed().joinToString("\n")
+        }
+    }
+
+    private fun updateRangeText(axis: Char, minHz: Float, maxHz: Float) {
+        val text = "%s range: %d - %d Hz".format(axis, minHz.toInt(), maxHz.toInt())
+        when (axis.uppercaseChar()) {
+            'X' -> tvRangeX.text = text
+            'Y' -> tvRangeY.text = text
+            'Z' -> tvRangeZ.text = text
         }
     }
 
@@ -470,13 +560,14 @@ class MainActivity : ComponentActivity() {
                 val out = smoother.sample(nowSec) ?: continue
                 val (rot, g) = out
 
-                // Your existing frequency feed (still fine).
-                // Volume is now controlled by RSSI via setGain().
+                val toneMapping = toneMapper.mapRotToTones(rot)
+                val midiEvents = midiMapper.mapMotion(rot)
+                midiOutput.send(midiEvents)
+
+                // Volume is controlled by RSSI via setGain().
                 if (soundEnabled && toneEngine.isRunning()) {
-                    val fx = rot.a * 4.0f
-                    val fy = rot.b * 4.0f
-                    val fz = rot.c * 4.0f
-                    toneEngine.setFrequencies(fx, fy, fz)
+                    toneEngine.setFrequencies(toneMapping.fx, toneMapping.fy, toneMapping.fz)
+                    toneEngine.setVoiceGains(toneMapping.gx, toneMapping.gy, toneMapping.gz)
                 }
 
                 runOnUiThread {
