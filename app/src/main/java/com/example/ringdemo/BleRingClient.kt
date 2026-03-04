@@ -85,6 +85,8 @@ class BleRingClient(
     // We defer START_RAW (and any other single pending command) until notifications are enabled
     private var pendingCommandHex: String? = null
     private var rssiReadInFlight: Boolean = false
+    private var rssiReadStartMs: Long = 0L
+    private val rssiReadTimeoutMs: Long = 1500L
 
     // =========================
     // Command queue (serializes writes, write-to-all UUIDs)
@@ -113,11 +115,21 @@ class BleRingClient(
     fun readRemoteRssi(): Boolean {
         val g = gatt ?: return false
 
-        // Only one RSSI read at a time
-        if (rssiReadInFlight) return true  // treat as "already running" not an error
+        val nowMs = SystemClock.elapsedRealtime()
+
+        // Only one RSSI read at a time; recover if callback was missed/stuck.
+        if (rssiReadInFlight) {
+            if (nowMs - rssiReadStartMs < rssiReadTimeoutMs) return true
+            rssiReadInFlight = false
+            rssiReadStartMs = 0L
+            onLog("RSSI read watchdog: clearing stale in-flight flag")
+        }
 
         val ok = g.readRemoteRssi()
-        if (ok) rssiReadInFlight = true
+        if (ok) {
+            rssiReadInFlight = true
+            rssiReadStartMs = nowMs
+        }
         return ok
     }
 
@@ -182,6 +194,7 @@ class BleRingClient(
         disconnectAfterStop = false
         stopSendReboot = false
         rssiReadInFlight = false
+        rssiReadStartMs = 0L
 
         onLog("Disconnected.")
         onState("Disconnected")
@@ -349,6 +362,7 @@ class BleRingClient(
         // ✅ RSSI callback
         override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
             rssiReadInFlight = false
+            rssiReadStartMs = 0L
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 onRssi(rssi)
             } else {
@@ -395,6 +409,7 @@ class BleRingClient(
     @SuppressLint("MissingPermission")
     private fun cleanupGattFromCallback(g: BluetoothGatt) {
         rssiReadInFlight = false
+        rssiReadStartMs = 0L
         enablingNotifies = false
         pendingCommandHex = null
         notifyQueue.clear()
