@@ -108,7 +108,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="RSSI gain scale: 1.00x"
+                    android:text="Gain: 1.00"
                     android:textSize="12sp"
                     android:typeface="monospace" />
 
@@ -148,8 +148,63 @@
 
                 </LinearLayout>
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnLoadWav"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Load WAV Trigger Sample" />
 
+                <TextView
+                    android:id="@+id/tvWavStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="WAV sample: (none)"
+                    android:textSize="12sp"
+                    android:typeface="monospace" />
 
+                <TextView
+                    android:id="@+id/tvRssiTrigger"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="WAV trigger RSSI: -65 dBm"
+                    android:textSize="12sp"
+                    android:typeface="monospace" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderRssiTrigger"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="-95"
+                    android:valueTo="-35"
+                    android:stepSize="1"
+                    android:value="-65" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/swInterpolateWav"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Interpolate WAV (repeat while above cutoff)" />
+
+                <TextView
+                    android:id="@+id/tvWavRepeatMultiplier"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="WAV repeat delay multiplier: 1x"
+                    android:textSize="12sp"
+                    android:typeface="monospace" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderWavRepeatMultiplier"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="1"
+                    android:valueTo="5"
+                    android:stepSize="1"
+                    android:value="1" />
 
                 <TextView
                     android:layout_width="match_parent"
