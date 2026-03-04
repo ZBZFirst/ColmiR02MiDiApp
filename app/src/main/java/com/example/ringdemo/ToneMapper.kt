@@ -18,9 +18,22 @@ class ToneMapper {
         val gz: Float,
     )
 
+    data class PitchWindow(
+        val minHz: Float,
+        val maxHz: Float,
+    )
+
     val x = AxisConfig()
     val y = AxisConfig()
     val z = AxisConfig()
+
+    private val rssiFarDbm = -100f
+    private val rssiNearDbm = -30f
+
+    // Phase 2 policy: RSSI slides a fixed-size pitch window within base [minHz..maxHz].
+    // We keep this as a constant for now; exposing it to UI can come later.
+    private val windowSpanRatio = 0.45f
+    private val rotationMax = 125f
 
     fun setAxisEnabled(axis: Char, enabled: Boolean) {
         axisConfig(axis).enabled = enabled
@@ -33,9 +46,18 @@ class ToneMapper {
     }
 
     fun mapRotToTones(rot: Vec3): ToneMapping {
-        val fx = mapAxis(rot.a, x)
-        val fy = mapAxis(rot.b, y)
-        val fz = mapAxis(rot.c, z)
+        // Backward-compatible fallback for callers that do not provide RSSI yet.
+        return mapRotToTonesWithRssi(rot, rssiDbm = -65f)
+    }
+
+    fun mapRotToTonesWithRssi(rot: Vec3, rssiDbm: Float): ToneMapping {
+        val xWindow = computePitchWindow(x, rssiDbm)
+        val yWindow = computePitchWindow(y, rssiDbm)
+        val zWindow = computePitchWindow(z, rssiDbm)
+
+        val fx = mapAxisWithinWindow(rot.a, xWindow)
+        val fy = mapAxisWithinWindow(rot.b, yWindow)
+        val fz = mapAxisWithinWindow(rot.c, zWindow)
 
         return ToneMapping(
             fx = fx,
@@ -47,6 +69,24 @@ class ToneMapper {
         )
     }
 
+    fun normalizeRssiForPitch(rssiDbm: Float): Float {
+        return ((rssiDbm - rssiFarDbm) / (rssiNearDbm - rssiFarDbm)).coerceIn(0f, 1f)
+    }
+
+    fun computePitchWindow(config: AxisConfig, rssiDbm: Float): PitchWindow {
+        val totalMin = config.minHz
+        val totalMax = config.maxHz
+        val totalSpan = (totalMax - totalMin).coerceAtLeast(1f)
+
+        val span = (totalSpan * windowSpanRatio).coerceIn(20f, totalSpan)
+        val slideRoom = (totalSpan - span).coerceAtLeast(0f)
+        val rssiNorm = normalizeRssiForPitch(rssiDbm)
+
+        val min = totalMin + slideRoom * rssiNorm
+        val max = min + span
+        return PitchWindow(minHz = min, maxHz = max)
+    }
+
     private fun axisConfig(axis: Char): AxisConfig = when (axis.uppercaseChar()) {
         'X' -> x
         'Y' -> y
@@ -54,9 +94,9 @@ class ToneMapper {
         else -> error("Unknown axis: $axis")
     }
 
-    private fun mapAxis(value: Float, config: AxisConfig): Float {
-        val norm = (value / 255f).coerceIn(0f, 1f)
-        val hz = config.minHz + (config.maxHz - config.minHz) * norm
+    private fun mapAxisWithinWindow(value: Float, window: PitchWindow): Float {
+        val norm = (value / rotationMax).coerceIn(0f, 1f)
+        val hz = window.minHz + (window.maxHz - window.minHz) * norm
         return hz.roundToInt().toFloat()
     }
 }
