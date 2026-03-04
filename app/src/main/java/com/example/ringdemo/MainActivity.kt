@@ -2,6 +2,7 @@
 package com.example.ringdemo
 
 import android.Manifest
+import android.animation.ObjectAnimator
 import android.app.AlertDialog
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
@@ -9,7 +10,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.Button
+import android.view.View
 import android.widget.CompoundButton
 import android.widget.ScrollView
 import android.widget.TextView
@@ -63,7 +64,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var tvRangeY: TextView
     private lateinit var tvRangeZ: TextView
 
-    private lateinit var btnRssi: Button
+    private lateinit var swRssiViz: SwitchMaterial
     private lateinit var rssiPlot: RssiPlotView
 
     // -------------------------
@@ -151,8 +152,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
             val allGranted = results.values.all { it }
             if (allGranted) {
-                setStatus("Permissions granted. Ready.")
-                startConnectFlow(userInitiated = true)
+                setStatus("Permissions granted. Select a device.")
             } else {
                 setStatus("Permissions denied.")
                 tail("Permissions denied.")
@@ -173,6 +173,8 @@ class MainActivity : ComponentActivity() {
 
         midiOutput.connectFirstAvailable()
         ensureBluetoothAndPermissions()
+        startRssiPolling()
+        shakeSelectDeviceButton()
     }
 
     override fun onDestroy() {
@@ -204,7 +206,7 @@ class MainActivity : ComponentActivity() {
         btnSelectDevice = findViewById(R.id.btnSelectDevice)
         tvSelectedDevice = findViewById(R.id.tvSelectedDevice)
 
-        btnRssi = findViewById(R.id.rssibutton)
+        swRssiViz = findViewById(R.id.swRssiViz)
         rssiPlot = findViewById(R.id.rssiPlot)
 
         swAutoInterp = findViewById(R.id.swAutoInterp)
@@ -252,6 +254,11 @@ class MainActivity : ComponentActivity() {
         }
 
         btnRetry.setOnClickListener {
+            if (selectedDeviceAddress == null) {
+                tail("Select a device first.")
+                shakeSelectDeviceButton()
+                return@setOnClickListener
+            }
             tail("Connect pressed.")
             autoRetryEnabled = true
             startConnectFlow(userInitiated = true)
@@ -294,15 +301,18 @@ class MainActivity : ComponentActivity() {
             logWriter.log("rssi gain scale set: %.2f".format(rssiGainScale))
         }
 
-        // RSSI graph/poll toggle
-        btnRssi.setOnClickListener {
-            rssiVizEnabled = !rssiVizEnabled
-            if (rssiVizEnabled) {
+        // RSSI visualizer toggle (polling stays on regardless)
+        rssiVizEnabled = false
+        rssiPlot.visibility = View.GONE
+        swRssiViz.isChecked = false
+        swRssiViz.setOnCheckedChangeListener { _: CompoundButton, checked: Boolean ->
+            rssiVizEnabled = checked
+            rssiPlot.visibility = if (checked) View.VISIBLE else View.GONE
+            if (checked) {
+                rssiPlot.setSamples(rssiSeries.toList())
                 tail("RSSI Visualizer ON")
-                startRssiPolling()
             } else {
                 tail("RSSI Visualizer OFF")
-                stopRssiPolling()
             }
         }
 
@@ -411,7 +421,7 @@ class MainActivity : ComponentActivity() {
                     // Keep your graph
                     rssiSeries.addLast(rssiDbm)
                     while (rssiSeries.size > RSSI_MAX_SAMPLES) rssiSeries.removeFirst()
-                    rssiPlot.setSamples(rssiSeries.toList())
+                    if (rssiVizEnabled) rssiPlot.setSamples(rssiSeries.toList())
 
                     // NEW: EMA + zone + audio fade
                     val ema = updateRssiEma(rssiDbm)
@@ -519,6 +529,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun shakeSelectDeviceButton() {
+        val animator = ObjectAnimator.ofFloat(
+            btnSelectDevice,
+            "translationX",
+            0f, 24f, -24f, 16f, -16f, 8f, -8f, 0f
+        )
+        animator.duration = 450
+        animator.start()
+    }
+
     private fun showDeviceSelectionDialog() {
         val devices = ble.getDiscoveredDevices()
         if (devices.isEmpty()) {
@@ -545,9 +565,8 @@ class MainActivity : ComponentActivity() {
         stopRssiPolling()
         rssiPollJob = lifecycleScope.launch {
             val periodMs = 250L
-            while (isActive && rssiVizEnabled) {
-                val ok = ble.readRemoteRssi()
-                if (!ok) tail("readRemoteRssi() -> false (not connected?)")
+            while (isActive) {
+                ble.readRemoteRssi()
                 delay(periodMs)
             }
         }
@@ -645,8 +664,7 @@ class MainActivity : ComponentActivity() {
 
         val missing = requiredPermissions().filterNot { hasPermission(it) }
         if (missing.isEmpty()) {
-            setStatus("Permissions already granted. Ready.")
-            startConnectFlow(userInitiated = true)
+            setStatus("Permissions already granted. Select a device.")
         } else {
             setStatus("Requesting permissions…")
             permissionLauncher.launch(missing.toTypedArray())

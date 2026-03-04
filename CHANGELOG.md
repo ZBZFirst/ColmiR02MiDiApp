@@ -12,6 +12,8 @@ It uses `AGENTS.md` as the source-of-truth reference for:
 ## [Unreleased]
 
 ### Added
+- Changed startup behavior to no longer auto-connect; app now prompts device selection first with button shake cue.
+- Changed RSSI visualizer UI from button to toggle while keeping RSSI polling active for audio gain even when graph is hidden.
 - Added "Select Device To Connect" flow: scan nearby devices, choose one, then use Connect to start BLE/session setup.
 - Added compatibility-probe onboarding flow for new Colmi rings (scan candidate -> GATT UUID check -> accept/reject and continue scanning).
 - Initial `CHANGELOG.md` with milestone-driven tracking tied directly to `AGENTS.md`.

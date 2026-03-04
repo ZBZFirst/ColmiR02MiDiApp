@@ -88,8 +88,8 @@
                         android:text="Disconnect" />
                 </LinearLayout>
 
-                <Button
-                    android:id="@+id/rssibutton"
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/swRssiViz"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="RSSI Visualizer" />
