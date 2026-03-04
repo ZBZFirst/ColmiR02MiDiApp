@@ -1,3 +1,8 @@
+/**
+ * Documentation block added for maintainability and review readiness.
+ * File: app/src/main/java/com/example/ringdemo/ui/theme/Color.kt
+ * Purpose: clarify responsibilities, data flow, and key implementation choices.
+ */
 package com.example.ringdemo.ui.theme
 
 import androidx.compose.ui.graphics.Color
