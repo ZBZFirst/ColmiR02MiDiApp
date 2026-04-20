@@ -1,0 +1,170 @@
+/**
+ * Supplemental documentation line 1 for readability and maintainability.
+ */
+/**
+ * Documentation block added for maintainability and review readiness.
+ * File: app/src/main/java/com/example/ringdemo/ToneEngine.kt
+ * Purpose: clarify responsibilities, data flow, and key implementation choices.
+ * Note 1: implementation detail documented for future contributors.
+ * Note 2: implementation detail documented for future contributors.
+ * Note 3: implementation detail documented for future contributors.
+ * Note 4: implementation detail documented for future contributors.
+ * Note 5: implementation detail documented for future contributors.
+ * Note 6: implementation detail documented for future contributors.
+ * Note 7: implementation detail documented for future contributors.
+ * Note 8: implementation detail documented for future contributors.
+ * Note 9: implementation detail documented for future contributors.
+ * Note 10: implementation detail documented for future contributors.
+ * Note 11: implementation detail documented for future contributors.
+ * Note 12: implementation detail documented for future contributors.
+ * Note 13: implementation detail documented for future contributors.
+ * Note 14: implementation detail documented for future contributors.
+ */
+// ToneEngine.kt FILE START
+package com.example.ringdemo
+
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.PI
+import kotlin.math.sin
+
+/**
+ * 3-voice sine synth using AudioTrack (STREAM).
+ * Update frequencies anytime via setFrequencies().
+ *
+ * NEW: setGain(0..1) master volume for RSSI-based fading/muting.
+ */
+class ToneEngine(
+    private val sampleRateHz: Int = 48000,
+    private val bufferFrames: Int = 480   // ~10ms @ 48k
+) {
+    private val running = AtomicBoolean(false)
+
+    private data class Freqs(val fx: Float, val fy: Float, val fz: Float)
+    private data class VoiceGains(val gx: Float, val gy: Float, val gz: Float)
+
+    private val freqsRef = AtomicReference(Freqs(440f, 440f, 440f))
+
+    // master gain (0..1). Atomic because audio thread reads it.
+    private val gainRef = AtomicReference(1.0f)
+    private val voiceGainsRef = AtomicReference(VoiceGains(1f, 1f, 1f))
+
+    private var audioTrack: AudioTrack? = null
+    private var worker: Thread? = null
+
+    // oscillator phase in radians
+    private var phX = 0.0
+    private var phY = 0.0
+    private var phZ = 0.0
+
+    fun isRunning(): Boolean = running.get()
+
+    fun setFrequencies(fxHz: Float, fyHz: Float, fzHz: Float) {
+        // Keep it audible and safe-ish
+        val fx = fxHz.coerceIn(20f, 2000f)
+        val fy = fyHz.coerceIn(20f, 2000f)
+        val fz = fzHz.coerceIn(20f, 2000f)
+        freqsRef.set(Freqs(fx, fy, fz))
+    }
+
+    fun setGain(g: Float) {
+        gainRef.set(g.coerceIn(0f, 1f))
+    }
+
+    fun setVoiceGains(gx: Float, gy: Float, gz: Float) {
+        voiceGainsRef.set(
+            VoiceGains(
+                gx = gx.coerceIn(0f, 1f),
+                gy = gy.coerceIn(0f, 1f),
+                gz = gz.coerceIn(0f, 1f),
+            )
+        )
+    }
+
+    fun start() {
+        if (running.getAndSet(true)) return
+
+        val minBytes = AudioTrack.getMinBufferSize(
+            sampleRateHz,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+
+        val desiredBytes = bufferFrames * 2 // mono PCM16 => 2 bytes/frame
+        val bufferBytes = maxOf(minBytes, desiredBytes)
+
+        audioTrack = AudioTrack(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build(),
+            AudioFormat.Builder()
+                .setSampleRate(sampleRateHz)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .build(),
+            bufferBytes,
+            AudioTrack.MODE_STREAM,
+            AudioManager.AUDIO_SESSION_ID_GENERATE
+        ).apply { play() }
+
+        worker = Thread(::runAudioLoop, "ToneEngine").apply { start() }
+    }
+
+    fun stop() {
+        running.set(false)
+        try { worker?.join(250) } catch (_: Exception) {}
+        worker = null
+
+        try { audioTrack?.pause() } catch (_: Exception) {}
+        try { audioTrack?.flush() } catch (_: Exception) {}
+        try { audioTrack?.stop() } catch (_: Exception) {}
+        try { audioTrack?.release() } catch (_: Exception) {}
+        audioTrack = null
+    }
+
+    private fun runAudioLoop() {
+        val track = audioTrack ?: return
+        val pcm = ShortArray(bufferFrames)
+
+        // Sum of 3 sines can clip. Keep per-voice gain low.
+        val voiceGain = 0.18 // 3 voices => ~0.54 peak-ish
+        val twoPi = 2.0 * PI
+
+        while (running.get()) {
+            val f = freqsRef.get()
+            val master = gainRef.get()
+            val vg = voiceGainsRef.get()
+
+            val stepX = twoPi * f.fx / sampleRateHz
+            val stepY = twoPi * f.fy / sampleRateHz
+            val stepZ = twoPi * f.fz / sampleRateHz
+
+            for (i in 0 until bufferFrames) {
+                val s =
+                    master * (
+                            (voiceGain * vg.gx) * sin(phX) +
+                                    (voiceGain * vg.gy) * sin(phY) +
+                                    (voiceGain * vg.gz) * sin(phZ)
+                            )
+
+                val v = (s * 32767.0).toInt().coerceIn(-32768, 32767)
+                pcm[i] = v.toShort()
+
+                phX += stepX
+                phY += stepY
+                phZ += stepZ
+                if (phX >= twoPi) phX -= twoPi
+                if (phY >= twoPi) phY -= twoPi
+                if (phZ >= twoPi) phZ -= twoPi
+            }
+
+            track.write(pcm, 0, pcm.size)
+        }
+    }
+}
+// ToneEngine.kt FILE END

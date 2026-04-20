@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>COLMI Ring Cube Control</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18201d;
+      --muted: #5d6763;
+      --line: #c8d3cd;
+      --paper: #f6f8f5;
+      --field: #ffffff;
+      --accent: #16765b;
+      --accent-2: #b33d26;
+      --face-a: rgba(31, 127, 177, 0.76);
+      --face-b: rgba(207, 71, 54, 0.76);
+      --face-c: rgba(38, 145, 92, 0.76);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #f6f8f5 0%, #e8eee9 100%);
+    }
+
+    main {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+      gap: 28px;
+      align-items: stretch;
+      padding: 28px;
+    }
+
+    .stage {
+      min-height: 520px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(90deg, rgba(24, 32, 29, 0.06) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(24, 32, 29, 0.06) 1px, transparent 1px),
+        #eef3ef;
+      background-size: 44px 44px;
+      perspective: 900px;
+      overflow: hidden;
+    }
+
+    .cube {
+      --ring-size: min(42vmin, 320px);
+      --ring-thickness: max(26px, calc(var(--ring-size) * 0.16));
+      width: var(--ring-size);
+      aspect-ratio: 1;
+      position: relative;
+      transform-style: preserve-3d;
+      transform: rotateX(-18deg) rotateY(24deg) rotateZ(0deg);
+      transition: transform 90ms linear;
+    }
+
+    .ring-body {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: var(--ring-thickness) solid rgba(31, 127, 177, 0.78);
+      background:
+        radial-gradient(circle, transparent 45%, rgba(255, 255, 255, 0.18) 46%, rgba(255, 255, 255, 0.06) 63%, transparent 64%),
+        conic-gradient(from 35deg, rgba(31, 127, 177, 0.55), rgba(207, 71, 54, 0.78), rgba(38, 145, 92, 0.72), rgba(31, 127, 177, 0.55));
+      box-shadow:
+        inset 0 0 0 2px rgba(255, 255, 255, 0.36),
+        inset 0 0 32px rgba(24, 32, 29, 0.16),
+        0 24px 44px rgba(24, 32, 29, 0.25);
+      transform: rotateX(72deg);
+      transform-style: preserve-3d;
+    }
+
+    .ring-hole {
+      position: absolute;
+      inset: var(--ring-thickness);
+      border-radius: 50%;
+      background: #eef3ef;
+      border: 1px solid rgba(24, 32, 29, 0.28);
+      box-shadow: inset 0 12px 22px rgba(24, 32, 29, 0.14);
+    }
+
+    .ring-point {
+      position: absolute;
+      top: calc(var(--ring-thickness) * -0.18);
+      left: 50%;
+      width: calc(var(--ring-thickness) * 0.8);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      border: 3px solid #ffffff;
+      background: #b33d26;
+      transform: translateX(-50%) translateZ(34px);
+      box-shadow: 0 8px 18px rgba(24, 32, 29, 0.32);
+    }
+
+    .axis-label {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      min-width: 42px;
+      min-height: 30px;
+      padding: 3px 8px;
+      border: 1px solid rgba(24, 32, 29, 0.36);
+      background: rgba(255, 255, 255, 0.82);
+      color: #fff;
+      color: var(--ink);
+      font-weight: 750;
+      font-size: 14px;
+      letter-spacing: 0;
+      transform: translateZ(48px);
+    }
+
+    .label-top { top: 4%; left: 50%; transform: translateX(-50%) translateZ(48px); }
+    .label-right { top: 50%; right: 4%; transform: translateY(-50%) translateZ(48px); }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.74);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .controls {
+      display: grid;
+      gap: 16px;
+    }
+
+    label {
+      display: grid;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    select {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--field);
+      color: var(--ink);
+      font: inherit;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    button {
+      min-height: 40px;
+      padding: 9px 12px;
+      border: 1px solid #285d4f;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      border-color: var(--line);
+      background: var(--field);
+      color: var(--ink);
+    }
+
+    output,
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .readout {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: var(--field);
+      font-size: 13px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .status {
+      color: var(--accent-2);
+      font-weight: 700;
+    }
+
+    .mapping {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .mapping label {
+      padding: 10px;
+      border: 1px solid var(--line);
+      background: var(--field);
+      font-size: 13px;
+    }
+
+    .calibration {
+      display: grid;
+      gap: 8px;
+    }
+
+    .calibration-row {
+      display: grid;
+      grid-template-columns: minmax(58px, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+
+    .calibration-row strong {
+      font-size: 13px;
+    }
+
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+
+    @media (max-width: 860px) {
+      main {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+
+      .stage {
+        min-height: 420px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="stage" aria-label="3D ring preview">
+      <div class="cube" id="cube">
+        <div class="ring-body">
+          <div class="ring-hole"></div>
+          <div class="ring-point" aria-label="rotation reference point"></div>
+          <div class="axis-label label-top">point</div>
+          <div class="axis-label label-right">side</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div>
+        <h1>COLMI ring control</h1>
+        <p>Side-on basis is 19,64,23. The marked point gives the ring one clear rotation reference.</p>
+      </div>
+
+      <div class="row">
+        <button id="bleButton" type="button">Connect R02_DA00</button>
+        <button id="rawOnButton" class="secondary" type="button">Raw on</button>
+        <button id="rawOffButton" class="secondary" type="button">Raw off</button>
+      </div>
+
+      <div class="row">
+        <button id="orientationButton" type="button">Use device motion</button>
+        <button id="socketButton" class="secondary" type="button">Connect ws://localhost:8766</button>
+        <button id="zeroButton" class="secondary" type="button">Zero pose</button>
+        <button id="resetButton" class="secondary" type="button">Reset</button>
+      </div>
+
+      <div class="calibration" aria-label="Reference pose setup">
+        <div class="calibration-row">
+          <strong>Side 1</strong>
+          <button class="secondary" data-use-pose="side1" type="button">Use</button>
+          <button class="secondary" data-capture-pose="side1" type="button">Capture</button>
+        </div>
+        <div class="calibration-row">
+          <strong>Side 2</strong>
+          <button class="secondary" data-use-pose="side2" type="button">Use</button>
+          <button class="secondary" data-capture-pose="side2" type="button">Capture</button>
+        </div>
+        <div class="calibration-row">
+          <strong>North</strong>
+          <button class="secondary" data-use-pose="north" type="button">Use</button>
+          <button class="secondary" data-capture-pose="north" type="button">Capture</button>
+        </div>
+      </div>
+
+      <div class="mapping" aria-label="Axis mapping">
+        <label>
+          View X
+          <select id="mapX">
+            <option value="rotX" selected>Ring X</option>
+            <option value="rotY">Ring Y</option>
+            <option value="rotZ">Ring Z</option>
+          </select>
+          <span class="check"><input id="invertX" type="checkbox"> invert</span>
+        </label>
+        <label>
+          View Y
+          <select id="mapY">
+            <option value="rotX">Ring X</option>
+            <option value="rotY" selected>Ring Y</option>
+            <option value="rotZ">Ring Z</option>
+          </select>
+          <span class="check"><input id="invertY" type="checkbox"> invert</span>
+        </label>
+        <label>
+          View Z
+          <select id="mapZ">
+            <option value="rotX">Ring X</option>
+            <option value="rotY">Ring Y</option>
+            <option value="rotZ" selected>Ring Z</option>
+          </select>
+          <span class="check"><input id="invertZ" type="checkbox"> invert</span>
+        </label>
+      </div>
+
+      <div class="controls">
+        <label>
+          X rotation <output id="xOut">19</output>
+          <input id="rotX" type="range" min="0" max="127" value="19">
+        </label>
+        <label>
+          Y rotation <output id="yOut">64</output>
+          <input id="rotY" type="range" min="0" max="127" value="64">
+        </label>
+        <label>
+          Z rotation <output id="zOut">23</output>
+          <input id="rotZ" type="range" min="0" max="127" value="23">
+        </label>
+      </div>
+
+      <label>
+        Packet hex
+        <input id="packetHex" type="text" placeholder="Example: A1 03 00 00 00 00 00 00">
+      </label>
+      <div class="row">
+        <button id="decodeButton" class="secondary" type="button">Decode packet</button>
+        <button id="sendCommandButton" class="secondary" type="button">Send command</button>
+      </div>
+
+      <div class="readout">
+        <div>Status: <span id="status" class="status">manual</span></div>
+        <div>Motion JSON: <code id="motionJson">{}</code></div>
+        <div>Zero: <code id="zeroJson">{"rotX":19,"rotY":64,"rotZ":23}</code></div>
+        <div>Poses: <code id="posesJson">{}</code></div>
+        <div>Bridge input: <code>{"rotX":19,"rotY":64,"rotZ":23,"ax":0,"ay":0,"az":1}</code></div>
+        <div>BLE: <code>service 6e40fff0..., write 6e400002..., notify 6e400003...</code></div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const cube = document.querySelector("#cube");
+    const sliders = {
+      rotX: document.querySelector("#rotX"),
+      rotY: document.querySelector("#rotY"),
+      rotZ: document.querySelector("#rotZ"),
+    };
+    const outs = {
+      rotX: document.querySelector("#xOut"),
+      rotY: document.querySelector("#yOut"),
+      rotZ: document.querySelector("#zOut"),
+    };
+    const statusEl = document.querySelector("#status");
+    const motionJsonEl = document.querySelector("#motionJson");
+    const zeroJsonEl = document.querySelector("#zeroJson");
+    const posesJsonEl = document.querySelector("#posesJson");
+    const packetHexEl = document.querySelector("#packetHex");
+    const axisControls = {
+      x: {
+        map: document.querySelector("#mapX"),
+        invert: document.querySelector("#invertX"),
+      },
+      y: {
+        map: document.querySelector("#mapY"),
+        invert: document.querySelector("#invertY"),
+      },
+      z: {
+        map: document.querySelector("#mapZ"),
+        invert: document.querySelector("#invertZ"),
+      },
+    };
+
+    const BLE_SERVICE_UUID = "6e40fff0-b5a3-f393-e0a9-e50e24dcca9e";
+    const BLE_WRITE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+    const BLE_NOTIFY_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+    const COMMANDS = {
+      rawOn: "A10404",
+      rawOff: "A102",
+      cameraOn: "0204",
+      cameraOff: "0206",
+      battery: "03",
+      reboot: "08",
+      blinkTwice: "10",
+    };
+    const DEFAULT_REFERENCE_POSES = {
+      side1: { rotX: 63, rotY: 124, rotZ: 60 },
+      side2: { rotX: 59, rotY: 3, rotZ: 62 },
+      north: { rotX: 19, rotY: 64, rotZ: 23 },
+    };
+    let referencePoses = JSON.parse(JSON.stringify(DEFAULT_REFERENCE_POSES));
+
+    let socket = null;
+    let bleDevice = null;
+    let bleWriteCharacteristic = null;
+    let motion = { ...referencePoses.north, ax: 0, ay: 0, az: 1 };
+    let zeroPose = { ...referencePoses.north };
+
+    function poseOnly(next) {
+      return {
+        rotX: clamp(Math.round(next.rotX), 0, 127),
+        rotY: clamp(Math.round(next.rotY), 0, 127),
+        rotZ: clamp(Math.round(next.rotZ), 0, 127),
+      };
+    }
+
+    function updateReferencePoseReadout() {
+      posesJsonEl.textContent = JSON.stringify(referencePoses);
+    }
+
+    function useReferencePose(name) {
+      const pose = referencePoses[name];
+      if (!pose) return;
+      setZeroPose(pose);
+      setMotion({ ...pose, ax: motion.ax, ay: motion.ay, az: motion.az }, name);
+      setStatus(`using ${name} as zero`);
+    }
+
+    function captureReferencePose(name) {
+      if (!referencePoses[name]) return;
+      referencePoses = { ...referencePoses, [name]: poseOnly(motion) };
+      updateReferencePoseReadout();
+      setStatus(`captured ${name}`);
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function ringRotToDegrees(value) {
+      return ((clamp(Number(value) || 0, 0, 127) - 63.5) / 63.5) * 180;
+    }
+
+    function shortestDegreeDelta(current, origin) {
+      let delta = current - origin;
+      while (delta > 180) delta -= 360;
+      while (delta < -180) delta += 360;
+      return delta;
+    }
+
+    function calibratedDegrees(axis) {
+      const sourceAxis = axisControls[axis].map.value;
+      const rawDegrees = shortestDegreeDelta(
+        ringRotToDegrees(motion[sourceAxis]),
+        ringRotToDegrees(zeroPose[sourceAxis])
+      );
+      return axisControls[axis].invert.checked ? -rawDegrees : rawDegrees;
+    }
+
+    function updateCubeTransform() {
+      cube.style.transform = [
+        `rotateX(${calibratedDegrees("x")}deg)`,
+        `rotateY(${calibratedDegrees("y")}deg)`,
+        `rotateZ(${calibratedDegrees("z")}deg)`,
+      ].join(" ");
+    }
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function setMotion(next, source) {
+      motion = {
+        rotX: clamp(Math.round(next.rotX ?? motion.rotX), 0, 127),
+        rotY: clamp(Math.round(next.rotY ?? motion.rotY), 0, 127),
+        rotZ: clamp(Math.round(next.rotZ ?? motion.rotZ), 0, 127),
+        ax: Number(next.ax ?? motion.ax),
+        ay: Number(next.ay ?? motion.ay),
+        az: Number(next.az ?? motion.az),
+      };
+
+      for (const key of ["rotX", "rotY", "rotZ"]) {
+        sliders[key].value = motion[key];
+        outs[key].value = motion[key];
+      }
+
+      updateCubeTransform();
+      motionJsonEl.textContent = JSON.stringify({ source, ...motion });
+    }
+
+    function setZeroPose(nextZero) {
+      zeroPose = poseOnly(nextZero);
+      zeroJsonEl.textContent = JSON.stringify(zeroPose);
+      updateCubeTransform();
+    }
+
+    function int12(u12) {
+      return u12 > 2047 ? u12 - 4096 : u12;
+    }
+
+    function raw12FromBytes(hi, lo) {
+      return int12(((hi << 4) | (lo & 0x0f)) & 0x0fff);
+    }
+
+    function convertRawToG(raw, rangeG = 4) {
+      return (raw / 2048) * rangeG;
+    }
+
+    function decodeType3Motion(bytes) {
+      if (bytes.length < 8) return null;
+      if ((bytes[1] & 0xff) !== 3) return null;
+
+      const rawY = raw12FromBytes(bytes[2] & 0xff, bytes[3] & 0xff);
+      const rawZ = raw12FromBytes(bytes[4] & 0xff, bytes[5] & 0xff);
+      const rawX = raw12FromBytes(bytes[6] & 0xff, bytes[7] & 0xff);
+      const ax = convertRawToG(rawX);
+      const ay = convertRawToG(rawY);
+      const az = convertRawToG(rawZ);
+      const ratio = 127 / Math.PI;
+
+      return {
+        rotX: Math.trunc((Math.atan2(ax, Math.sqrt((ay * ay) + (az * az))) + (Math.PI / 2)) * ratio),
+        rotY: Math.trunc((Math.atan2(ay, Math.sqrt((ax * ax) + (az * az))) + (Math.PI / 2)) * ratio),
+        rotZ: Math.trunc((Math.atan2(az, Math.sqrt((ax * ax) + (ay * ay))) + (Math.PI / 2)) * ratio),
+        ax,
+        ay,
+        az,
+      };
+    }
+
+    function parseHexBytes(text) {
+      const cleaned = text.replace(/[^a-fA-F0-9]/g, "");
+      if (cleaned.length % 2 !== 0) return null;
+      const bytes = [];
+      for (let i = 0; i < cleaned.length; i += 2) {
+        bytes.push(Number.parseInt(cleaned.slice(i, i + 2), 16));
+      }
+      return bytes;
+    }
+
+    function bytesToHex(bytes) {
+      return Array.from(bytes)
+        .map((value) => value.toString(16).padStart(2, "0").toUpperCase())
+        .join(" ");
+    }
+
+    function frameCommand(hex) {
+      const bytes = parseHexBytes(hex);
+      if (!bytes || bytes.length === 0 || bytes.length > 15) return null;
+      const frame = new Uint8Array(16);
+      for (let i = 0; i < bytes.length; i += 1) frame[i] = bytes[i];
+
+      let crc = 0;
+      for (let i = 0; i < 15; i += 1) crc = (crc + frame[i]) & 0xff;
+      frame[15] = crc;
+      return frame;
+    }
+
+    async function sendRingCommand(hex, label = hex) {
+      if (!bleWriteCharacteristic) {
+        setStatus("BLE not connected");
+        return;
+      }
+
+      const frame = frameCommand(hex);
+      if (!frame) {
+        setStatus("invalid command hex");
+        return;
+      }
+
+      await bleWriteCharacteristic.writeValue(frame);
+      setStatus(`sent ${label}: ${bytesToHex(frame)}`);
+    }
+
+    function handleBleNotification(event) {
+      const value = event.target.value;
+      const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+      const decoded = decodeType3Motion(bytes);
+      if (decoded) {
+        setMotion(decoded, "ble");
+        setStatus("BLE raw motion");
+      } else {
+        setStatus(`BLE packet ${bytesToHex(bytes.slice(0, 8))}`);
+      }
+    }
+
+    async function connectBleRing() {
+      if (!navigator.bluetooth) {
+        setStatus("Web Bluetooth unavailable");
+        return;
+      }
+
+      bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ name: "R02_DA00" }, { namePrefix: "R02" }, { namePrefix: "COLMI" }, { namePrefix: "QRING" }],
+        optionalServices: [BLE_SERVICE_UUID],
+      });
+
+      bleDevice.addEventListener("gattserverdisconnected", () => {
+        bleWriteCharacteristic = null;
+        setStatus("BLE disconnected");
+      });
+
+      setStatus(`connecting ${bleDevice.name || "ring"}`);
+      const server = await bleDevice.gatt.connect();
+      const service = await server.getPrimaryService(BLE_SERVICE_UUID);
+      bleWriteCharacteristic = await service.getCharacteristic(BLE_WRITE_UUID);
+      const notifyCharacteristic = await service.getCharacteristic(BLE_NOTIFY_UUID);
+      notifyCharacteristic.addEventListener("characteristicvaluechanged", handleBleNotification);
+      await notifyCharacteristic.startNotifications();
+      setStatus(`BLE connected: ${bleDevice.name || "ring"}`);
+    }
+
+    for (const key of Object.keys(sliders)) {
+      sliders[key].addEventListener("input", () => {
+        setStatus("manual");
+        setMotion({ ...motion, [key]: Number(sliders[key].value) }, "manual");
+      });
+    }
+
+    for (const axis of Object.keys(axisControls)) {
+      axisControls[axis].map.addEventListener("change", () => {
+        setStatus("axis mapping changed");
+        updateCubeTransform();
+      });
+      axisControls[axis].invert.addEventListener("change", () => {
+        setStatus("axis inversion changed");
+        updateCubeTransform();
+      });
+    }
+
+    for (const button of document.querySelectorAll("[data-use-pose]")) {
+      button.addEventListener("click", () => useReferencePose(button.dataset.usePose));
+    }
+
+    for (const button of document.querySelectorAll("[data-capture-pose]")) {
+      button.addEventListener("click", () => captureReferencePose(button.dataset.capturePose));
+    }
+
+    document.querySelector("#decodeButton").addEventListener("click", () => {
+      const bytes = parseHexBytes(packetHexEl.value);
+      const decoded = bytes ? decodeType3Motion(bytes) : null;
+      if (!decoded) {
+        setStatus("packet was not type 3 motion");
+        return;
+      }
+      setStatus("decoded packet");
+      setMotion(decoded, "packet");
+    });
+
+    document.querySelector("#sendCommandButton").addEventListener("click", async () => {
+      try {
+        await sendRingCommand(packetHexEl.value, "custom");
+      } catch (error) {
+        setStatus(`send failed: ${error.message}`);
+      }
+    });
+
+    document.querySelector("#bleButton").addEventListener("click", async () => {
+      try {
+        await connectBleRing();
+      } catch (error) {
+        setStatus(`BLE connect failed: ${error.message}`);
+      }
+    });
+
+    document.querySelector("#rawOnButton").addEventListener("click", async () => {
+      try {
+        await sendRingCommand(COMMANDS.rawOn, "raw on");
+      } catch (error) {
+        setStatus(`raw on failed: ${error.message}`);
+      }
+    });
+
+    document.querySelector("#rawOffButton").addEventListener("click", async () => {
+      try {
+        await sendRingCommand(COMMANDS.rawOff, "raw off");
+      } catch (error) {
+        setStatus(`raw off failed: ${error.message}`);
+      }
+    });
+
+    document.querySelector("#zeroButton").addEventListener("click", () => {
+      setZeroPose(motion);
+      setStatus("zeroed current pose");
+    });
+
+    document.querySelector("#resetButton").addEventListener("click", () => {
+      setStatus("manual");
+      setZeroPose(referencePoses.north);
+      setMotion({ ...referencePoses.north, ax: 0, ay: 0, az: 1 }, "reset");
+    });
+
+    document.querySelector("#orientationButton").addEventListener("click", async () => {
+      if (typeof DeviceOrientationEvent === "undefined") {
+        setStatus("device orientation unavailable");
+        return;
+      }
+
+      if (typeof DeviceOrientationEvent.requestPermission === "function") {
+        const response = await DeviceOrientationEvent.requestPermission();
+        if (response !== "granted") {
+          setStatus("device orientation denied");
+          return;
+        }
+      }
+
+      window.addEventListener("deviceorientation", (event) => {
+        setStatus("device orientation");
+        setMotion({
+          rotX: clamp(((event.beta ?? 0) + 180) / 360 * 127, 0, 127),
+          rotY: clamp(((event.gamma ?? 0) + 90) / 180 * 127, 0, 127),
+          rotZ: clamp((event.alpha ?? 0) / 360 * 127, 0, 127),
+          ax: 0,
+          ay: 0,
+          az: 1,
+        }, "deviceorientation");
+      }, { passive: true });
+    });
+
+    document.querySelector("#socketButton").addEventListener("click", () => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close();
+        return;
+      }
+
+      socket = new WebSocket("ws://localhost:8766");
+      socket.addEventListener("open", () => setStatus("websocket connected"));
+      socket.addEventListener("close", () => setStatus("websocket closed"));
+      socket.addEventListener("error", () => setStatus("websocket error"));
+      socket.addEventListener("message", (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          setMotion(parsed, "websocket");
+          setStatus("websocket motion");
+        } catch {
+          setStatus("websocket message was not motion JSON");
+        }
+      });
+    });
+
+    updateReferencePoseReadout();
+    setMotion(motion, "manual");
+  </script>
+</body>
+</html>

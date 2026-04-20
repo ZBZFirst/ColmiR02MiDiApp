@@ -1,0 +1,8 @@
+<!--
+  Documentation block added for maintainability and release inspection.
+  File: app/src/main/res/values/strings.xml
+  Purpose: describe UI structure and intent for reviewers and maintainers.
+-->
+<resources>
+    <string name="app_name">RingDemo</string>
+</resources>

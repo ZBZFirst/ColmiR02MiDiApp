@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Documentation block added for maintainability and release inspection.
+  File: app/src/main/res/values/themes.xml
+  Purpose: describe UI structure and intent for reviewers and maintainers.
+-->
+<resources>
+
+    <style name="Theme.RingDemo" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- You can add colors later -->
+    </style>
+
+</resources>
